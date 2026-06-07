@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,168 +10,69 @@ import {
   ScrollView,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
+import useFetch from './../hooks/useFetch';
+import { buildApiUrl } from './../config/api';
 
 const { width } = Dimensions.get('window');
 
-export default function ProductosScreen() {
+export default function ProductosScreen({ route }) {
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [paginaActual, setPaginaActual] = useState(1);
   const productosPorPagina = 6;
+  const entrepreneurFilter = route?.params?.entrepreneurFilter;
 
-  // Datos de ejemplo de productos con imágenes reales
-  const productos = [
-    {
-      id: '1',
-      nombre: 'Collar de Perlas',
-      precio: '$25.000',
-      categoria: 'Bisuteria',
-      descripcion:
-        'Elegante collar de perlas naturales con cierre dorado de 18k, perfecto para ocasiones especiales.',
-      emprendedor: 'María Rodríguez',
-      imagen:
-        'https://images.unsplash.com/photo-1599643478510-a34935077415?w=400',
-    },
-    {
-      id: '2',
-      nombre: 'Muñeca Artesanal',
-      precio: '$35.000',
-      categoria: 'Muñequeria',
-      descripcion:
-        'Encantadora muñeca de trapo hecha a mano con materiales ecológicos y detalles únicos.',
-      emprendedor: 'Ana Gómez',
-      imagen:
-        'https://images.unsplash.com/photo-1589871020035-89a2b9c8411a?w=400',
-    },
-    {
-      id: '3',
-      nombre: 'Pastel de Chocolate',
-      precio: '$18.000',
-      categoria: 'Reposteria',
-      descripcion:
-        'Exquisito pastel de chocolate belga con relleno de crema y decoración artesanal.',
-      emprendedor: 'Carlos López',
-      imagen:
-        'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400',
-    },
-    {
-      id: '4',
-      nombre: 'Pintura Abstracta',
-      precio: '$120.000',
-      categoria: 'Arte movil',
-      descripcion:
-        'Obra de arte contemporáneo en acrílico sobre lienzo, expresión única de colores y formas.',
-      emprendedor: 'Pedro Martínez',
-      imagen:
-        'https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400',
-    },
-    {
-      id: '5',
-      nombre: 'Jarrón Cerámica',
-      precio: '$45.000',
-      categoria: 'Decoraciones',
-      descripcion:
-        'Hermoso jarrón de cerámica pintado a mano con diseños únicos y acabado brillante.',
-      emprendedor: 'Laura Fernández',
-      imagen:
-        'https://images.unsplash.com/photo-1584735264932-96eef344d6bb?w=400',
-    },
-    {
-      id: '6',
-      nombre: 'Portalápices Artesanal',
-      precio: '$15.000',
-      categoria: 'Manualidades',
-      descripcion:
-        'Creativo portalápices hecho con materiales reciclados, ideal para tu espacio de trabajo.',
-      emprendedor: 'Juan Pérez',
-      imagen:
-        'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=400',
-    },
-    {
-      id: '7',
-      nombre: 'Aretes Dorados',
-      precio: '$32.000',
-      categoria: 'Bisuteria',
-      descripcion:
-        'Modernos aretes en baño de oro con detalles minimalistas, perfectos para el día a día.',
-      emprendedor: 'Sofia Castro',
-      imagen:
-        'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=400',
-    },
-    {
-      id: '8',
-      nombre: 'Osito de Peluche',
-      precio: '$28.000',
-      categoria: 'Muñequeria',
-      descripcion:
-        'Suave osito de peluche hecho a mano, ideal como regalo para ocasiones especiales.',
-      emprendedor: 'David Ramirez',
-      imagen:
-        'https://images.unsplash.com/photo-1589871020035-89a2b9c8411a?w=400',
-    },
-    {
-      id: '9',
-      nombre: 'Galletas Decoradas',
-      precio: '$12.000',
-      categoria: 'Reposteria',
-      descripcion:
-        'Deliciosas galletas decoradas a mano con glaseado real, disponibles en diversos diseños.',
-      emprendedor: 'Elena Morales',
-      imagen: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400',
-    },
-    {
-      id: '10',
-      nombre: 'Escultura Moderna',
-      precio: '$85.000',
-      categoria: 'Arte movil',
-      descripcion:
-        'Impresionante escultura en metal que representa el movimiento y la fluidez.',
-      emprendedor: 'Ricardo Silva',
-      imagen: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400',
-    },
-    {
-      id: '11',
-      nombre: 'Lámpara de Mesa',
-      precio: '$55.000',
-      categoria: 'Decoraciones',
-      descripcion:
-        'Elegante lámpara de mesa con base de madera y pantalla de lino, crea un ambiente acogedor.',
-      emprendedor: 'Carmen Ruiz',
-      imagen:
-        'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400',
-    },
-    {
-      id: '12',
-      nombre: 'Maceta Decorativa',
-      precio: '$22.000',
-      categoria: 'Manualidades',
-      descripcion:
-        'Original maceta pintada a mano con motivos naturales, perfecta para tus plantas.',
-      emprendedor: 'Miguel Ángel',
-      imagen:
-        'https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=400',
-    },
-  ];
+  const { data, loading, error, refetch } = useFetch(
+    buildApiUrl('/productos/mostrarProductos')
+  );
 
-  const categorias = [
-    'Todos',
-    'Bisuteria',
-    'Muñequeria',
-    'Reposteria',
-    'Arte movil',
-    'Decoraciones',
-    'Manualidades',
-  ];
+  const productos = useMemo(() => {
+    if (!Array.isArray(data)) return [];
+    return data.map((item) => ({
+      id: item.id_producto?.toString() ?? `${item.id_emprededor}-${item.nombre}`,
+      nombre: item.nombre,
+      precio: item.precio,
+      categoria: item.categoria,
+      descripcion: item.descripcion,
+      emprendedor: item.emprendedor,
+      imagen: item.imagenes?.[0] ? buildApiUrl(item.imagenes[0]) : null,
+      stock: item.stock,
+      id_categoria: item.id_categoria,
+      id_emprededor: item.id_emprededor,
+      status: item.status,
+      fecha_ingreso: item.fecha_ingreso,
+    }));
+  }, [data]);
 
-  // Filtrar productos por categoría
-  const productosFiltrados =
-    categoriaSeleccionada === 'Todos'
-      ? productos
-      : productos.filter(
-          (producto) => producto.categoria === categoriaSeleccionada
-        );
+  const categorias = useMemo(() => {
+    const setCat = new Set(['Todos']);
+    productos.forEach((producto) => {
+      if (producto.categoria) {
+        setCat.add(producto.categoria);
+      }
+    });
+    return Array.from(setCat).sort((a, b) => {
+      if (a === 'Todos') return -1;
+      if (b === 'Todos') return 1;
+      return a.localeCompare(b);
+    });
+  }, [productos]);
+
+  const productosFiltrados = productos.filter((producto) => {
+    const categoriaValida =
+      categoriaSeleccionada === 'Todos' ||
+      producto.categoria === categoriaSeleccionada;
+
+    const emprendedorValido =
+      !entrepreneurFilter ||
+      producto.emprendedor === entrepreneurFilter ||
+      producto.id_emprededor?.toString() === entrepreneurFilter?.toString();
+
+    return categoriaValida && emprendedorValido;
+  });
 
   // Calcular productos para la página actual
   const indiceInicial = (paginaActual - 1) * productosPorPagina;
@@ -207,9 +108,15 @@ export default function ProductosScreen() {
   // Renderizar cada producto
   const renderProducto = ({ item }) => (
     <View style={styles.card}>
-      <Image source={{ uri: item.imagen }} style={styles.imagen} />
+      {item.imagen ? (
+        <Image source={{ uri: item.imagen }} style={styles.imagen} />
+      ) : (
+        <View style={[styles.imagen, { backgroundColor: '#e2e8f0' }]} />
+      )}
       <Text style={styles.nombreProducto}>{item.nombre}</Text>
-      <Text style={styles.precio}>{item.precio}</Text>
+      <Text style={styles.precio}>
+        {typeof item.precio === 'number' ? `$${item.precio.toFixed(2)}` : item.precio}
+      </Text>
       <Text style={styles.categoria}>{item.categoria}</Text>
 
       <TouchableOpacity
@@ -293,14 +200,37 @@ export default function ProductosScreen() {
       </Text>
 
       {/* Lista de productos */}
-      <FlatList
-        data={productosPagina}
-        renderItem={renderProducto}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.lista}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#14532d" />
+          <Text style={styles.loadingText}>Cargando productos...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>
+            Error al cargar productos. Intenta de nuevo.
+          </Text>
+          <TouchableOpacity style={styles.botonVerMas} onPress={refetch}>
+            <Text style={styles.textoBoton}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={productosPagina}
+          renderItem={renderProducto}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.lista}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                No hay productos disponibles.
+              </Text>
+            </View>
+          )}
+        />
+      )}
 
       {/* Paginación */}
       {renderPaginacion()}
@@ -433,6 +363,33 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontSize: 14,
     paddingHorizontal: 15,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 14,
+    color: '#4b5563',
+    fontSize: 16,
+  },
+  errorText: {
+    marginBottom: 12,
+    color: '#b91c1c',
+    fontSize: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#4b5563',
+    fontSize: 16,
+    textAlign: 'center',
   },
   lista: {
     paddingHorizontal: 10,

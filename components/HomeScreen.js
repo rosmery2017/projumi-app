@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,245 +9,99 @@ import {
   Modal,
   Image, // <-- RE-IMPORTADO
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import useFetch from './../hooks/useFetch';
+import { buildApiUrl } from './../config/api';
 
-// --- Datos de Ejemplo (Productos) ---
-// (Tu lista de 'initialProducts' completa iría aquí... la acorto por brevedad)
-const initialProducts = [
-  {
-    id: '1',
-    name: 'Rosmery Mejias',
-    category: 'Reposteria',
-    price: 15.5,
-    entrepreneur: 'Dulce Mordida',
-    description:
-      'Deliciosas tostas y galletas artesanales, crujientes y llenas de sabor.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/dulce_mordida.jpg',
-  },
-  {
-    id: '7',
-    name: 'Efrain Pastran',
-    category: 'Reposteria',
-    price: 20.0,
-    entrepreneur: 'Leche y Miel',
-    description:
-      'Dulces delicionsas expecializados en la elaboracion de granolas',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/leche_miel.jpg',
-  },
-  {
-    id: '2',
-    name: 'Muñeca Tejida',
-    category: 'Muñequeria',
-    price: 25.0,
-    entrepreneur: 'Hilos Mágicos',
-    description:
-      'Muñeca suave y colorida, ideal para niños. Ojos de seguridad.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/Verónica Diseño.jpeg',
-  },
-  {
-    id: '3',
-    name: 'Torta de Chocolate',
-    category: 'Reposteria',
-    price: 18.0,
-    entrepreneur: 'Dulces Experiencia',
-    description: 'Torta húmeda de chocolate con triple capa de fudge.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/dulce_experiencia.jpg',
-  },
-  {
-    id: '5',
-    name: 'Cojín Bordado',
-    category: 'Decoraciones',
-    price: 30.0,
-    entrepreneur: 'Hogar y Estilo',
-    description: 'Cojín decorativo con bordado floral. Incluye relleno.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/Maikelys.jpeg',
-  },
-  {
-    id: '6',
-    name: 'Set de Velas',
-    category: 'Manualidades',
-    price: 12.0,
-    entrepreneur: 'Artesanía Luz',
-    description:
-      'Set de tres velas con esencias naturales de lavanda y vainilla.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/Karla.jpeg',
-  },
-  {
-    id: '13',
-    name: 'Pulsera de Cuero',
-    category: 'Bisuteria',
-    price: 14.0,
-    entrepreneur: 'Cuero & Más',
-    description: 'Pulsera de cuero trenzado con dije de metal.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/Marilú y Gerardo.jpeg',
-  },
-  {
-    id: '14',
-    name: 'Maceta Colgante',
-    category: 'Arte movil',
-    price: 28.0,
-    entrepreneur: 'Verde Vida',
-    description: 'Maceta de macramé para colgar plantas.',
-    imageSource:
-      'https://groupforcetechnology.ct.ws/public/emprendedores/Samaira, carpintería.jpeg',
-  },
-]; // ... y el resto de tus productos
+const HOME_API_PATH = '/emprendedor/mostrarEmprendedores';
 
-// --- Lista de Categorías (sin cambios) ---
-const categories = [
-  'Ver Todo',
-  'Bisuteria',
-  'Muñequeria',
-  'Reposteria',
-  'Arte movil',
-  'Decoraciones',
-  'Manualidades',
-];
+const getImageUrl = (imagePath) =>
+  imagePath?.startsWith('http') ? imagePath : buildApiUrl(imagePath || '');
 
-// --- NUEVA LÓGICA: Añadimos descripciones simuladas para los emprendedores ---
-const entrepreneurDescriptions = {
-  'Joyas Ana':
-    'Especialistas en joyería fina y perlas cultivadas con más de 10 años de experiencia.',
-  'Hilos Mágicos':
-    'Creamos muñecos de trapo y amigurumis con materiales 100% hipoalergénicos.',
-  'Peluchería Feliz':
-    'Los osos de peluche más suaves y abrazables, hechos con amor.',
-  'Dulces Tentaciones':
-    'Repostería artesanal para eventos. Usamos solo ingredientes de la mejor calidad.',
-  'La Abuela':
-    'Las recetas tradicionales de galletas y postres, horneadas como en casa.',
-  'Case Art':
-    'Convertimos tu funda de celular en una obra de arte única y personalizada.',
-  TechAccesorios: 'Gadgets y accesorios prácticos para tu vida digital.',
-  'Hogar y Estilo':
-    'Decoración textil que le da un toque cálido y moderno a tu hogar.',
-  'Barro y Arte':
-    'Cerámica de autor. Piezas únicas que combinan funcionalidad y diseño.',
-  'Artesanía Luz': 'Velas aromáticas y manualidades que iluminan tu espacio.',
-  'Pinta Fácil':
-    'Kits de "hazlo tú mismo" para que desates tu creatividad sin complicaciones.',
-  'Cuero & Más':
-    'Artículos de cuero genuino, desde pulseras hasta billeteras, con un toque rústico.',
-  'Verde Vida': 'Soluciones creativas para llenar tu hogar de plantas y vida.',
-  'Melodía Artesana':
-    'Cajas musicales y pequeños detalles en madera que cuentan una historia.',
-};
-
-// --- Lógica para transformar Productos en Emprendedores Únicos ---
-const entrepreneursMap = new Map();
-initialProducts.forEach((product) => {
-  if (!entrepreneursMap.has(product.entrepreneur)) {
-    entrepreneursMap.set(product.entrepreneur, {
-      id: product.entrepreneur,
-      name: product.entrepreneur,
-      categories: new Set([product.category]),
-      imageSource: product.imageSource,
-      // Añadimos la descripción simulada
-      description:
-        entrepreneurDescriptions[product.entrepreneur] ||
-        'Un increíble emprendedor de Projumi.',
-    });
-  } else {
-    entrepreneursMap.get(product.entrepreneur).categories.add(product.category);
-  }
-});
-
-const allEntrepreneurs = Array.from(entrepreneursMap.values()).map((emp) => ({
-  ...emp,
-  categoriesArray: Array.from(emp.categories),
-  categoryString: Array.from(emp.categories).join(', '),
-  description: emp.description, // Aseguramos que la descripción esté en el objeto final
-}));
-
-// --- Componente Principal Fusionado ---
 const HomeScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('Ver Todo');
-
-  // --- ESTADO DEL MODAL RE-AÑADIDO ---
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedEntrepreneur, setSelectedEntrepreneur] = useState(null);
 
-  // Lógica de filtrado de emprendedores (sin cambios)
-  const filteredEntrepreneurs = allEntrepreneurs.filter((emp) => {
+  const { data, loading, error, refetch } = useFetch(
+    buildApiUrl(HOME_API_PATH)
+  );
+
+  const entrepreneurs = data || [];
+
+  const categories = useMemo(() => {
+    const categorySet = new Set();
+    entrepreneurs.forEach((emp) => {
+      emp.categorias?.forEach((cat) => {
+        if (cat?.nombre) {
+          categorySet.add(cat.nombre);
+        }
+      });
+    });
+    return ['Ver Todo', ...Array.from(categorySet).sort()];
+  }, [entrepreneurs]);
+
+  const filteredEntrepreneurs = entrepreneurs.filter((emp) => {
     if (selectedCategory === 'Ver Todo') {
       return true;
     }
-    return emp.categoriesArray.includes(selectedCategory);
+    return emp.categorias?.some((cat) => cat.nombre === selectedCategory);
   });
 
-  // Función "Comencemos" (sin cambios)
   const handleComencemosPress = () => {
     navigation.navigate('Productos');
   };
 
-  // --- FUNCIONES DEL MODAL RE-AÑADIDAS ---
-
-  // 1. Abrir modal
   const showEntrepreneurDetails = (entrepreneur) => {
     setSelectedEntrepreneur(entrepreneur);
     setModalVisible(true);
   };
 
-  // 2. Cerrar modal
   const closeModal = () => {
     setModalVisible(false);
-    setSelectedEntrepreneur(null); // Limpiamos la selección
+    setSelectedEntrepreneur(null);
   };
 
-  // 3. Navegar a los productos del emprendedor
   const handleViewProducts = (entrepreneurName) => {
-    closeModal(); // Cerramos el modal
-
-    // Navegamos a la pantalla 'Productos' y le pasamos un parámetro.
-    // Tu pantalla 'ProductListScreen' necesitaría ser ajustada
-    // para leer este parámetro y filtrar por emprendedor.
+    closeModal();
     navigation.navigate('Productos', { entrepreneurFilter: entrepreneurName });
   };
 
-  // --- Renderizado de la Tarjeta de EMPRENDEDOR (ACTUALIZADA) ---
-  const renderEntrepreneurCard = ({ item }) => (
-    <View style={styles.productCard}>
-      {item.imageSource?.startsWith('http') ? (
+  const renderEntrepreneurCard = ({ item }) => {
+    const categoryString = item.categorias
+      ?.map((cat) => cat.nombre)
+      .filter(Boolean)
+      .join(', ') || 'Sin categorías';
+
+    return (
+      <View style={styles.productCard}>
         <Image
-          source={{ uri: item.imageSource }}
+          source={{ uri: getImageUrl(item.imagen) }}
           style={styles.imagePlaceholder}
           resizeMode="cover"
         />
-      ) : (
-        <View
-          style={[
-            styles.imagePlaceholder,
-            { backgroundColor: item.imageSource },
-          ]}
-        />
-      )}
+        <Text style={styles.productName} numberOfLines={2}>
+          {item.nombre_completo}
+        </Text>
+        <Text style={styles.productCategory} numberOfLines={1}>
+          {item.emprendimiento}
+        </Text>
+        <Text style={styles.productCategory} numberOfLines={2}>
+          {categoryString}
+        </Text>
 
-      <Text style={styles.productName} numberOfLines={2}>
-        {item.name}
-      </Text>
-      <Text style={styles.productCategory}>
-        Categorías: {item.categoryString}
-      </Text>
+        <TouchableOpacity
+          style={styles.detailsButton}
+          onPress={() => showEntrepreneurDetails(item)}>
+          <Text style={styles.detailsButtonText}>Ver más</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
-      {/* --- BOTÓN "VER MÁS" RE-AÑADIDO --- */}
-      <TouchableOpacity
-        style={styles.detailsButton}
-        onPress={() => showEntrepreneurDetails(item)}>
-        <Text style={styles.detailsButtonText}>Ver más</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  // --- Componente de Cabecera para la FlatList (sin cambios) ---
   const ListHeader = () => (
     <>
       <View style={styles.headerContent}>
@@ -291,18 +145,42 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-    <StatusBar barStyle="light-content" backgroundColor="##006400" />
-      <FlatList
-        data={filteredEntrepreneurs}
-        keyExtractor={(item) => item.id}
-        renderItem={renderEntrepreneurCard}
-        contentContainerStyle={styles.listContainer}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
-        ListHeaderComponent={ListHeader}
-      />
+      <StatusBar barStyle="light-content" backgroundColor="#006400" />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#14532d" />
+          <Text style={styles.loadingText}>Cargando emprendedores...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>
+            Error al cargar emprendedores. Por favor intenta de nuevo.
+          </Text>
+          <TouchableOpacity style={styles.button} onPress={refetch}>
+            <Text style={styles.buttonText}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredEntrepreneurs}
+          keyExtractor={(item) =>
+            item.id_emprendedor?.toString() || item.nombre_completo
+          }
+          renderItem={renderEntrepreneurCard}
+          contentContainerStyle={styles.listContainer}
+          numColumns={2}
+          columnWrapperStyle={styles.row}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                No hay emprendedores disponibles para esta categoría.
+              </Text>
+            </View>
+          )}
+        />
+      )}
 
-      {/* --- MODAL PARA DETALLES DEL EMPRENDEDOR (RE-AÑADIDO) --- */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -310,40 +188,34 @@ const HomeScreen = ({ navigation }) => {
         onRequestClose={closeModal}>
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
-            {/* Usamos 'selectedEntrepreneur' para mostrar los datos */}
             {selectedEntrepreneur && (
               <>
-                <View
-                  style={[
-                    styles.modalImagePlaceholder,
-                    { backgroundColor: selectedEntrepreneur.imageSource },
-                  ]}
+                <Image
+                  source={{ uri: getImageUrl(selectedEntrepreneur.imagen) }}
+                  style={styles.modalImagePlaceholder}
+                  resizeMode="cover"
                 />
-
                 <Text style={styles.modalTitle}>
-                  {selectedEntrepreneur.name}
+                  {selectedEntrepreneur.nombre_completo}
                 </Text>
-
                 <Text style={styles.modalCategories}>
-                  Especialidades: {selectedEntrepreneur.categoryString}
+                  {selectedEntrepreneur.emprendimiento}
                 </Text>
-
                 <ScrollView style={styles.descriptionScrollView}>
                   <Text style={styles.modalDescription}>
-                    {selectedEntrepreneur.description}
+                    {selectedEntrepreneur.categorias
+                      ?.map((cat) => cat.nombre)
+                      .filter(Boolean)
+                      .join(', ') || 'Sin categorías'}
                   </Text>
                 </ScrollView>
-
-                {/* --- BOTÓN PARA VER PRODUCTOS --- */}
                 <TouchableOpacity
                   style={styles.viewProductsButton}
-                  onPress={() => handleViewProducts(selectedEntrepreneur.name)}>
+                  onPress={() => handleViewProducts(selectedEntrepreneur.emprendimiento)}>
                   <Text style={styles.viewProductsButtonText}>
                     🛒 Ver sus Productos
                   </Text>
                 </TouchableOpacity>
-
-                {/* --- Botón Cerrar --- */}
                 <TouchableOpacity
                   style={styles.closeButton}
                   onPress={closeModal}>
@@ -358,7 +230,6 @@ const HomeScreen = ({ navigation }) => {
   );
 };
 
-// --- Estilos Fusionados y Re-añadidos ---
 const styles = StyleSheet.create({
   // ... (Estilos de container, headerContent, icon, title, description, button, buttonText - sin cambios)
   container: {
@@ -451,6 +322,32 @@ const styles = StyleSheet.create({
   },
   row: {
     justifyContent: 'space-between',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#4b5563',
+    fontSize: 16,
+  },
+  errorText: {
+    color: '#b91c1c',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#4b5563',
+    fontSize: 16,
+    textAlign: 'center',
   },
   productCard: {
     // Estilo de tarjeta de emprendedor

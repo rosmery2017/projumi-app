@@ -1,0 +1,92 @@
+import { buildApiUrl } from '../config/api';
+
+const LOGIN_ENDPOINT = '/home/api_login';
+
+const normalizeText = (value) =>
+  typeof value === 'string' ? value.trim() : '';
+
+const readJsonSafely = async (response) => {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+};
+
+const getMessageFromPayload = (payload, fallbackMessage) => {
+  if (!payload) {
+    return fallbackMessage;
+  }
+
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  return (
+    payload.message ||
+    payload.error ||
+    payload.msg ||
+    payload.detail ||
+    payload.description ||
+    fallbackMessage
+  );
+};
+
+const extractUser = (payload, fallbackCedula) => {
+  if (payload?.user && typeof payload.user === 'object') {
+    return payload.user;
+  }
+
+  return {
+    cedula: fallbackCedula,
+    name: fallbackCedula,
+    raw: payload,
+  };
+};
+
+export const loginWithBackend = async ({ cedula, password }) => {
+  const loginValue = normalizeText(cedula);
+  const normalizedPassword = normalizeText(password);
+
+  const formData = new FormData();
+  formData.append('cedula', loginValue);
+  formData.append('password', normalizedPassword);
+
+  let response;
+  try {
+    response = await fetch(buildApiUrl(LOGIN_ENDPOINT), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+      body: formData,
+    });
+  } catch (error) {
+    throw new Error(
+      `No se pudo conectar con el backend en ${buildApiUrl(
+        LOGIN_ENDPOINT
+      )}. Verifica que el celular y la PC esten en la misma red y que Apache permita conexiones.`
+    );
+  }
+
+  const payload = await readJsonSafely(response);
+
+  if (!response.ok || payload?.success === false) {
+    throw new Error(
+      getMessageFromPayload(payload, 'No se pudo iniciar sesion')
+    );
+  }
+
+  return {
+    token: null,
+    user: extractUser(payload, loginValue),
+    raw: payload,
+    endpoint: LOGIN_ENDPOINT,
+  };
+};

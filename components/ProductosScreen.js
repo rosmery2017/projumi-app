@@ -24,9 +24,15 @@ export default function ProductosScreen({ route }) {
   const [paginaActual, setPaginaActual] = useState(1);
   const productosPorPagina = 6;
   const entrepreneurFilter = route?.params?.entrepreneurFilter;
+  const token = route?.params?.token;
 
   const { data, loading, error, refetch } = useFetch(
-    buildApiUrl('/productos/mostrarProductos')
+    buildApiUrl('/productos/mostrarProductos'),
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
   );
 
   const productos = useMemo(() => {

@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 const DEFAULT_LOCAL_API_URL =
   Platform.OS === 'android'
-    ? 'http://192.168.100.108/projumi'
+    ? 'http://192.168.100.103/projumi'
     : 'http://localhost/projumi';
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');

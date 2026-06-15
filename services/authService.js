@@ -1,4 +1,5 @@
 import { buildApiUrl } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LOGIN_ENDPOINT = '/home/api_login';
 
@@ -59,6 +60,7 @@ export const loginWithBackend = async ({ cedula, password }) => {
   formData.append('password', normalizedPassword);
 
   let response;
+
   try {
     response = await fetch(buildApiUrl(LOGIN_ENDPOINT), {
       method: 'POST',
@@ -77,14 +79,36 @@ export const loginWithBackend = async ({ cedula, password }) => {
 
   const payload = await readJsonSafely(response);
 
+  console.log('Respuesta login:', payload);
+
   if (!response.ok || payload?.success === false) {
     throw new Error(
       getMessageFromPayload(payload, 'No se pudo iniciar sesion')
     );
   }
 
+  if (!payload?.token) {
+    throw new Error(
+      'El backend no devolvió un token JWT válido.'
+    );
+  }
+
+  // Guardar JWT
+  await AsyncStorage.setItem(
+    'jwt_token',
+    payload.token
+  );
+
+  // Guardar usuario (opcional)
+  if (payload.user) {
+    await AsyncStorage.setItem(
+      'user_data',
+      JSON.stringify(payload.user)
+    );
+  }
+
   return {
-    token: null,
+    token: payload.token,
     user: extractUser(payload, loginValue),
     raw: payload,
     endpoint: LOGIN_ENDPOINT,

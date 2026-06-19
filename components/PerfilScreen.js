@@ -127,6 +127,13 @@ const PerfilScreen = ({ route, navigation }) => {
 
         <TouchableOpacity
           style={styles.menuItem}
+          onPress={() => navigation.navigate('Compras')}>
+          <Ionicons name="bag-check" size={22} color="#006400" />
+          <Text style={styles.menuText}>Mis compras</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
           onPress={() => navigation.navigate('Pagos')}>
           <Ionicons name="wallet" size={22} color="#006400" />
           <Text style={styles.menuText}>Mis pagos</Text>

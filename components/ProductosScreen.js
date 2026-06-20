@@ -37,9 +37,18 @@ export default function ProductosScreen({ navigation, route }) {
   const entrepreneurFilter = route?.params?.entrepreneurFilter;
   const { token, isReady: authReady } = useAuth();
   const { addToCart } = useCart();
+  const productosUrl = useMemo(() => {
+    const baseUrl = buildApiUrl('/productos/mostrarProductos');
+    if (!token) {
+      return baseUrl;
+    }
+
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
+  }, [token]);
 
   const { data, loading, error, refetch } = useFetch(
-    buildApiUrl('/productos/mostrarProductos'),
+    productosUrl,
     {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -303,7 +312,13 @@ export default function ProductosScreen({ navigation, route }) {
                     setCategoriaSeleccionada(categoria);
                     setPaginaActual(1);
                   }}>
-                  <Text style={styles.textoCategoria} numberOfLines={1}>
+                  <Text
+                    style={[
+                      styles.textoCategoria,
+                      categoriaSeleccionada === categoria &&
+                        styles.textoCategoriaSeleccionado,
+                    ]}
+                    numberOfLines={1}>
                     {categoria}
                   </Text>
                 </TouchableOpacity>
@@ -546,6 +561,9 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontWeight: '700',
     textAlign: 'center',
+  },
+  textoCategoriaSeleccionado: {
+    color: '#ffffff',
   },
   contador: {
     textAlign: 'center',

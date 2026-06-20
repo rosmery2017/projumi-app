@@ -1,28 +1,32 @@
-# Sample Snack app
+# Projumi App
 
-## Configuracion del backend
+Aplicación móvil en Expo para consumir el backend de Projumi.
 
-La URL base de la API se lee desde `EXPO_PUBLIC_API_URL`.
+## Configuración
 
-1. Edita `.env.local`.
-2. Cambia el valor de `EXPO_PUBLIC_API_URL` por tu backend local o de produccion.
-3. Reinicia Expo para que tome la nueva variable.
+La app toma la URL base del backend desde:
 
-Ejemplo:
+- `.env`
+- `.env.local`
+
+Variable:
 
 ```bash
-EXPO_PUBLIC_API_URL=http://10.139.167.20/projumi
+EXPO_PUBLIC_API_URL=http://192.168.100.103/projumi
 ```
 
-Si pruebas en un emulador Android y tu backend corre en tu computadora, puede que necesites usar `http://10.0.2.2/projumi` en lugar de `localhost`.
-Si tu celular está conectado por hotspot de Windows, prueba `http://192.168.137.1/projumi`.
+## Qué debes cambiar
 
-Open the `App.js` file to start writing some code. You can preview the changes directly on your phone or tablet by scanning the **QR code** or use the iOS or Android emulators. When you're done, click **Save** and share the link!
+1. Si trabajas desde tu PC con un celular físico, usa la IP real de tu red local.
+2. Si cambias de red o publicas en hosting, solo actualiza `EXPO_PUBLIC_API_URL`.
+3. Reinicia Expo con caché limpia cuando cambies el valor:
 
-When you're ready to see everything that Expo provides (or if you want to use your own editor) you can **Download** your project and use it with [expo cli](https://docs.expo.dev/get-started/installation/#expo-cli)).
+```bash
+npx expo start -c
+```
 
-All projects created in Snack are publicly available, so you can easily share the link to this project via link, or embed it on a web page with the `<>` button.
+## Recomendaciones rápidas
 
-If you're having problems, you can tweet to us [@expo](https://twitter.com/expo) or ask in our [forums](https://forums.expo.dev/c/expo-dev-tools/61) or [Discord](https://chat.expo.dev/).
-
-Snack is Open Source. You can find the code on the [GitHub repo](https://github.com/expo/snack).
+- En emulador Android, puedes usar `http://10.0.2.2/projumi`.
+- Si usas hotspot de Windows, prueba `http://192.168.137.1/projumi`.
+- No subas el archivo `.env`; deja solo `.env.example` en el repositorio.

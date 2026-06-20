@@ -48,6 +48,7 @@ const LoginScreen = ({ navigation }) => {
       signIn(session);
       navigation.replace('Home');
     } catch (error) {
+      console.log('Login fallido:', error);
       Alert.alert(
         'Error al iniciar sesion',
         error?.message || 'No se pudo autenticar contra el backend'

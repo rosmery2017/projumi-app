@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,32 +11,58 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import useFetch from './../hooks/useFetch';
 import { buildApiUrl } from './../config/api';
+import { useAuth } from './../context/AuthContext';
+import { useCart } from './../context/CartContext';
 
 const { width } = Dimensions.get('window');
 
-export default function ProductosScreen({ route }) {
+const formatPrice = (value) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? `$${numericValue.toFixed(2)}` : '$0.00';
+};
+
+export default function ProductosScreen({ navigation, route }) {
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [cantidadSeleccionada, setCantidadSeleccionada] = useState(1);
   const [paginaActual, setPaginaActual] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
   const productosPorPagina = 6;
   const entrepreneurFilter = route?.params?.entrepreneurFilter;
-  const token = route?.params?.token;
+  const { token, isReady: authReady } = useAuth();
+  const { addToCart } = useCart();
 
   const { data, loading, error, refetch } = useFetch(
     buildApiUrl('/productos/mostrarProductos'),
     {
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-    }
+    },
+    authReady && Boolean(token)
   );
 
+  if (error) {
+    console.log('ProductosScreen error:', {
+      message: error?.message,
+      stack: error?.stack,
+      tokenPresent: Boolean(token),
+      authReady,
+      entrepreneurFilter,
+    });
+  }
+
   const productos = useMemo(() => {
-    if (!Array.isArray(data)) return [];
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
     return data.map((item) => ({
       id: item.id_producto?.toString() ?? `${item.id_emprededor}-${item.nombre}`,
       nombre: item.nombre,
@@ -60,6 +86,7 @@ export default function ProductosScreen({ route }) {
         setCat.add(producto.categoria);
       }
     });
+
     return Array.from(setCat).sort((a, b) => {
       if (a === 'Todos') return -1;
       if (b === 'Todos') return 1;
@@ -67,75 +94,136 @@ export default function ProductosScreen({ route }) {
     });
   }, [productos]);
 
-  const productosFiltrados = productos.filter((producto) => {
-    const categoriaValida =
-      categoriaSeleccionada === 'Todos' ||
-      producto.categoria === categoriaSeleccionada;
+  const productosFiltrados = useMemo(() => {
+    return productos.filter((producto) => {
+      const categoriaValida =
+        categoriaSeleccionada === 'Todos' ||
+        producto.categoria === categoriaSeleccionada;
 
-    const emprendedorValido =
-      !entrepreneurFilter ||
-      producto.emprendedor === entrepreneurFilter ||
-      producto.id_emprededor?.toString() === entrepreneurFilter?.toString();
+      const emprendedorValido =
+        !entrepreneurFilter ||
+        producto.emprendedor === entrepreneurFilter ||
+        producto.id_emprededor?.toString() === entrepreneurFilter?.toString();
 
-    return categoriaValida && emprendedorValido;
-  });
+      const searchValido =
+        !searchTerm ||
+        `${producto.nombre} ${producto.categoria || ''} ${producto.descripcion || ''}`
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase().trim());
 
-  // Calcular productos para la página actual
+      return categoriaValida && emprendedorValido && searchValido;
+    });
+  }, [categoriaSeleccionada, entrepreneurFilter, productos, searchTerm]);
+
   const indiceInicial = (paginaActual - 1) * productosPorPagina;
   const indiceFinal = indiceInicial + productosPorPagina;
   const productosPagina = productosFiltrados.slice(indiceInicial, indiceFinal);
-  const totalPaginas = Math.ceil(
-    productosFiltrados.length / productosPorPagina
-  );
+  const totalPaginas = Math.ceil(productosFiltrados.length / productosPorPagina);
 
-  // Función para ver más información del producto
-  const verMasProducto = (producto) => {
+  if (!authReady) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#14532d" />
+        <Text style={styles.loadingText}>Restaurando sesion...</Text>
+      </View>
+    );
+  }
+
+  if (!token) {
+    return (
+      <View style={styles.loadingScreen}>
+        <Text style={styles.errorText}>
+          Tu sesion no esta activa. Inicia sesion nuevamente para ver productos.
+        </Text>
+        <TouchableOpacity
+          style={styles.botonReintentar}
+          onPress={() => navigation.navigate('Login')}>
+          <Text style={styles.textoBotonDetalle}>Ir al login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const abrirDetalle = (producto) => {
     setProductoSeleccionado(producto);
+    setCantidadSeleccionada(1);
     setModalVisible(true);
   };
 
-  // Función para añadir al carrito
-  const añadirAlCarrito = (producto) => {
+  const stockDisponible = Number(productoSeleccionado?.stock);
+  const stockMaximo =
+    Number.isFinite(stockDisponible) && stockDisponible > 0 ? stockDisponible : null;
+  const puedeComprar = !Number.isFinite(stockDisponible) || stockDisponible > 0;
+
+  const ajustarCantidad = (delta) => {
+    setCantidadSeleccionada((current) => {
+      const siguiente = Math.max(1, current + delta);
+      if (stockMaximo) {
+        return Math.min(siguiente, stockMaximo);
+      }
+      return siguiente;
+    });
+  };
+
+  const anadirAlCarrito = (producto, cantidad = 1) => {
+    addToCart(producto, cantidad);
     Alert.alert(
-      'Producto Añadido',
-      `"${producto.nombre}" se ha añadido al carrito`,
+      'Producto añadido',
+      `"${producto.nombre}" se añadió al carrito x${cantidad}.`,
       [
-        { text: 'Seguir Comprando', style: 'cancel' },
-        { text: 'Ver Carrito', onPress: () => console.log('Ir al carrito') },
+      { text: 'Seguir comprando', style: 'cancel' },
+      { text: 'Ver carrito', onPress: () => navigation.navigate('Carrito') },
       ]
     );
   };
 
-  // Cambiar de página
   const cambiarPagina = (nuevaPagina) => {
     setPaginaActual(nuevaPagina);
   };
 
-  // Renderizar cada producto
   const renderProducto = ({ item }) => (
     <View style={styles.card}>
       {item.imagen ? (
         <Image source={{ uri: item.imagen }} style={styles.imagen} />
       ) : (
-        <View style={[styles.imagen, { backgroundColor: '#e2e8f0' }]} />
+        <View style={[styles.imagen, styles.imagenVacia]} />
       )}
-      <Text style={styles.nombreProducto}>{item.nombre}</Text>
-      <Text style={styles.precio}>
-        {typeof item.precio === 'number' ? `$${item.precio.toFixed(2)}` : item.precio}
-      </Text>
-      <Text style={styles.categoria}>{item.categoria}</Text>
 
-      <TouchableOpacity
-        style={styles.botonVerMas}
-        onPress={() => verMasProducto(item)}>
-        <Text style={styles.textoBoton}>Ver más</Text>
-      </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.categoriaPill} numberOfLines={1}>
+          {item.categoria || 'Sin categoria'}
+        </Text>
+        <Text style={styles.nombreProducto} numberOfLines={2}>
+          {item.nombre}
+        </Text>
+        <Text style={styles.descripcionProducto} numberOfLines={2}>
+          {item.descripcion || 'Producto disponible en el catalogo de PROJUMI.'}
+        </Text>
+
+        <View style={styles.priceRow}>
+          <Text style={styles.precio}>{formatPrice(item.precio)}</Text>
+          <Text style={styles.stock}>{item.stock ?? 'N/D'} stock</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.botonDetalle}
+          onPress={() => abrirDetalle(item)}>
+          <Text style={styles.textoBotonDetalle}>Ver detalle</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.botonCarrito}
+          onPress={() => anadirAlCarrito(item)}>
+          <Text style={styles.textoBotonCarrito}>Añadir al carrito</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
-  // Renderizar indicador de paginación
   const renderPaginacion = () => {
-    if (totalPaginas <= 1) return null;
+    if (totalPaginas <= 1) {
+      return null;
+    }
 
     return (
       <View style={styles.paginacionContainer}>
@@ -168,121 +256,185 @@ export default function ProductosScreen({ route }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}> Nuestros Productos</Text>
-
-      {/* Filtro de categorías - VERSIÓN MEJORADA */}
-      <View style={styles.filtroContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtroContent}>
-          {categorias.map((categoria) => (
-            <TouchableOpacity
-              key={categoria}
-              style={[
-                styles.botonCategoria,
-                categoriaSeleccionada === categoria &&
-                  styles.botonCategoriaSeleccionado,
-              ]}
-              onPress={() => {
-                setCategoriaSeleccionada(categoria);
-                setPaginaActual(1);
-              }}>
-              <Text style={styles.textoCategoria} numberOfLines={1}>
-                {categoria}
+      <FlatList
+        data={productosPagina}
+        renderItem={renderProducto}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.lista}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <>
+            <View style={styles.hero}>
+              <View style={styles.heroBadge}>
+                <Ionicons name="gift-outline" size={16} color="#14532d" />
+                <Text style={styles.heroBadgeText}>Catalogo PROJUMI</Text>
+              </View>
+              <Text style={styles.title}>Nuestros Productos</Text>
+              <Text style={styles.subtitle}>
+                Explora el catalogo, filtra por categoria y añade productos al carrito.
               </Text>
-              {categoriaSeleccionada === categoria && (
-                <View style={styles.indicator} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
 
-      {/* Contador de productos */}
-      <Text style={styles.contador}>
-        Mostrando {productosPagina.length} de {productosFiltrados.length}{' '}
-        productos
-      </Text>
-
-      {/* Lista de productos */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#14532d" />
-          <Text style={styles.loadingText}>Cargando productos...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>
-            Error al cargar productos. Intenta de nuevo.
-          </Text>
-          <TouchableOpacity style={styles.botonVerMas} onPress={refetch}>
-            <Text style={styles.textoBoton}>Reintentar</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={productosPagina}
-          renderItem={renderProducto}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          contentContainerStyle={styles.lista}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={() => (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                No hay productos disponibles.
-              </Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={18} color="#64748b" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar productos..."
+                  placeholderTextColor="#94a3b8"
+                  value={searchTerm}
+                  onChangeText={setSearchTerm}
+                />
+              </View>
             </View>
-          )}
-        />
-      )}
 
-      {/* Paginación */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filtroContent}>
+              {categorias.map((categoria) => (
+                <TouchableOpacity
+                  key={categoria}
+                  style={[
+                    styles.botonCategoria,
+                    categoriaSeleccionada === categoria &&
+                      styles.botonCategoriaSeleccionado,
+                  ]}
+                  onPress={() => {
+                    setCategoriaSeleccionada(categoria);
+                    setPaginaActual(1);
+                  }}>
+                  <Text style={styles.textoCategoria} numberOfLines={1}>
+                    {categoria}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.contador}>
+              Mostrando {productosPagina.length} de {productosFiltrados.length} productos
+            </Text>
+          </>
+        }
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
+            {loading ? (
+              <>
+                <ActivityIndicator size="large" color="#14532d" />
+                <Text style={styles.loadingText}>Cargando productos...</Text>
+              </>
+            ) : error ? (
+              <>
+                <Text style={styles.errorText}>
+                  Error al cargar productos. Intenta de nuevo.
+                </Text>
+                <Text style={styles.errorDetail} numberOfLines={4}>
+                  {error?.message || 'Sin detalle de error'}
+                </Text>
+                <TouchableOpacity style={styles.botonReintentar} onPress={refetch}>
+                  <Text style={styles.textoBotonDetalle}>Reintentar</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.emptyText}>No hay productos disponibles.</Text>
+            )}
+          </View>
+        )}
+      />
+
       {renderPaginacion()}
 
-      {/* Modal para ver más información */}
       <Modal
         animationType="fade"
-        transparent={true}
+        transparent
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            {productoSeleccionado && (
+            {productoSeleccionado ? (
               <>
-                <Image
-                  source={{ uri: productoSeleccionado.imagen }}
-                  style={styles.modalImagen}
-                />
-                <Text style={styles.modalTitulo}>
-                  {productoSeleccionado.nombre}
-                </Text>
+                {productoSeleccionado.imagen ? (
+                  <Image
+                    source={{ uri: productoSeleccionado.imagen }}
+                    style={styles.modalImagen}
+                  />
+                ) : (
+                  <View style={[styles.modalImagen, styles.imagenVacia]} />
+                )}
+
+                <Text style={styles.modalTitulo}>{productoSeleccionado.nombre}</Text>
                 <Text style={styles.modalPrecio}>
-                  {productoSeleccionado.precio}
+                  {formatPrice(productoSeleccionado.precio)}
                 </Text>
                 <Text style={styles.modalDescripcion}>
-                  {productoSeleccionado.descripcion}
+                  {productoSeleccionado.descripcion || 'Sin descripcion disponible.'}
                 </Text>
 
                 <View style={styles.infoContainer}>
                   <Text style={styles.modalEmprendedor}>
-                    Emprendedor: {productoSeleccionado.emprendedor}
+                    Emprendimiento: {productoSeleccionado.emprendedor || 'No disponible'}
                   </Text>
                   <Text style={styles.modalCategoria}>
-                    Categoría: {productoSeleccionado.categoria}
+                    Categoria: {productoSeleccionado.categoria || 'Sin categoria'}
+                  </Text>
+                  <Text style={styles.modalStock}>
+                    Stock: {productoSeleccionado.stock ?? 'No disponible'}
                   </Text>
                 </View>
 
+                <View style={styles.quantitySection}>
+                  <Text style={styles.quantityLabel}>Cantidad</Text>
+                  <View style={styles.quantityStepper}>
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        cantidadSeleccionada === 1 && styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() => ajustarCantidad(-1)}
+                      disabled={cantidadSeleccionada === 1}>
+                      <Text style={styles.quantityButtonText}>-</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.quantityValueBox}>
+                      <Text style={styles.quantityValue}>{cantidadSeleccionada}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.quantityButton,
+                        !puedeComprar && styles.quantityButtonDisabled,
+                        stockMaximo &&
+                          cantidadSeleccionada >= stockMaximo &&
+                          styles.quantityButtonDisabled,
+                      ]}
+                      onPress={() => ajustarCantidad(1)}
+                      disabled={
+                        !puedeComprar ||
+                        (stockMaximo ? cantidadSeleccionada >= stockMaximo : false)
+                      }>
+                      <Text style={styles.quantityButtonText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {stockMaximo ? (
+                    <Text style={styles.quantityHint}>
+                      Máximo disponible: {stockMaximo}
+                    </Text>
+                  ) : null}
+                </View>
+
                 <TouchableOpacity
-                  style={styles.botonCarrito}
+                  style={[
+                    styles.botonCarritoModal,
+                    !puedeComprar && styles.botonCarritoDeshabilitado,
+                  ]}
                   onPress={() => {
-                    añadirAlCarrito(productoSeleccionado);
+                    if (!puedeComprar) {
+                      return;
+                    }
+                    anadirAlCarrito(productoSeleccionado, cantidadSeleccionada);
                     setModalVisible(false);
                   }}>
-                  <Text style={styles.textoBotonCarrito}>
-                    {' '}
-                    Añadir al Carrito
+                  <Text style={styles.textoBotonCarritoModal}>
+                    {puedeComprar ? `Añadir ${cantidadSeleccionada} al carrito` : 'Sin stock'}
                   </Text>
                 </TouchableOpacity>
 
@@ -292,7 +444,7 @@ export default function ProductosScreen({ route }) {
                   <Text style={styles.textoBotonCerrar}>Cerrar</Text>
                 </TouchableOpacity>
               </>
-            )}
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -304,77 +456,109 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
-    paddingTop: 20,
+  },
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  lista: {
+    paddingHorizontal: 10,
+    paddingBottom: 20,
+  },
+  hero: {
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 14,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    marginBottom: 10,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 10,
+  },
+  heroBadgeText: {
+    color: '#14532d',
+    fontWeight: '700',
+    fontSize: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 15,
-    color: '#2c3e50',
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1f2937',
+    marginBottom: 8,
   },
-  filtroContainer: {
-    marginBottom: 15,
-    maxHeight: 60,
+  subtitle: {
+    fontSize: 15,
+    color: '#4b5563',
+    lineHeight: 22,
+    marginBottom: 14,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchInput: {
+    flex: 1,
+    color: '#0f172a',
+    fontSize: 15,
   },
   filtroContent: {
     paddingHorizontal: 15,
     alignItems: 'center',
-    paddingVertical: 5,
+    paddingBottom: 4,
   },
   botonCategoria: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     backgroundColor: '#fff',
     borderRadius: 25,
     marginHorizontal: 6,
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-    minWidth: 110, // Tamaño fijo para evitar cambios
-    maxWidth: 110, // Tamaño fijo para evitar cambios
+    borderWidth: 1,
+    borderColor: '#dbe4ea',
+    minWidth: 110,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   botonCategoriaSeleccionado: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    backgroundColor: '#14532d',
+    borderColor: '#14532d',
   },
   textoCategoria: {
-    fontSize: 14,
-    color: '#6c757d',
-    fontWeight: '600', // Peso fijo que no cambia el tamaño
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '700',
     textAlign: 'center',
-  },
-  indicator: {
-    position: 'absolute',
-    bottom: 4,
-    width: 6,
-    height: 6,
-    backgroundColor: '#fff',
-    borderRadius: 3,
   },
   contador: {
     textAlign: 'center',
-    color: '#6c757d',
+    color: '#6b7280',
     marginBottom: 10,
     fontSize: 14,
     paddingHorizontal: 15,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  emptyContainer: {
     paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 200,
   },
   loadingText: {
     marginTop: 14,
@@ -388,73 +572,110 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
+  errorDetail: {
+    marginBottom: 12,
+    color: '#7f1d1d',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   emptyText: {
     color: '#4b5563',
     fontSize: 16,
     textAlign: 'center',
   },
-  lista: {
-    paddingHorizontal: 10,
-    paddingBottom: 20,
-  },
   card: {
     flex: 1,
     backgroundColor: '#fff',
     margin: 6,
-    padding: 12,
-    borderRadius: 15,
-    alignItems: 'center',
+    borderRadius: 18,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 6,
     elevation: 4,
     minWidth: (width - 40) / 2,
   },
   imagen: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    marginBottom: 10,
+    width: '100%',
+    height: 140,
+  },
+  imagenVacia: {
+    backgroundColor: '#e2e8f0',
+  },
+  cardBody: {
+    padding: 12,
+  },
+  categoriaPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#e0f2fe',
+    color: '#075985',
+    fontSize: 11,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 8,
   },
   nombreProducto: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 5,
-    color: '#2c3e50',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'left',
+    marginBottom: 6,
+    color: '#111827',
+    minHeight: 38,
+  },
+  descripcionProducto: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 10,
+    minHeight: 32,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   precio: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 4,
+    fontWeight: '900',
+    color: '#14532d',
   },
-  categoria: {
-    fontSize: 12,
-    color: '#6c757d',
-    marginBottom: 10,
-    textAlign: 'center',
+  stock: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '700',
   },
-  botonVerMas: {
+  botonDetalle: {
     backgroundColor: '#28a745',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: '#28a745',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 10,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  textoBoton: {
+  textoBotonDetalle: {
     color: '#fff',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '800',
+  },
+  botonCarrito: {
+    backgroundColor: '#14532d',
+    paddingVertical: 10,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  textoBotonCarrito: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  botonReintentar: {
+    backgroundColor: '#28a745',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 16,
   },
   paginacionContainer: {
     flexDirection: 'row',
@@ -496,35 +717,30 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 25,
-    width: '90%',
-    maxWidth: 400,
+    borderRadius: 22,
+    padding: 22,
+    width: '92%',
+    maxWidth: 420,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
   },
   modalImagen: {
-    width: 100,
-    height: 100,
-    borderRadius: 15,
-    marginBottom: 20,
+    width: 120,
+    height: 120,
+    borderRadius: 18,
+    marginBottom: 16,
   },
   modalTitulo: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: '800',
     marginBottom: 10,
     textAlign: 'center',
-    color: '#2c3e50',
+    color: '#111827',
   },
   modalPrecio: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 15,
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#14532d',
+    marginBottom: 12,
   },
   modalDescripcion: {
     fontSize: 15,
@@ -535,50 +751,110 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 18,
     padding: 15,
     backgroundColor: '#f8f9fa',
     borderRadius: 12,
   },
   modalEmprendedor: {
     fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '700',
+    marginBottom: 6,
     color: '#2c3e50',
   },
   modalCategoria: {
     fontSize: 14,
     color: '#6c757d',
+    marginBottom: 4,
   },
-  botonCarrito: {
-    backgroundColor: '#28a745',
+  modalStock: {
+    fontSize: 14,
+    color: '#6c757d',
+  },
+  botonCarritoModal: {
+    backgroundColor: '#14532d',
     paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
+    paddingVertical: 14,
+    borderRadius: 18,
     marginBottom: 12,
     width: '100%',
     alignItems: 'center',
-    shadowColor: '#28a745',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  textoBotonCarrito: {
+  botonCarritoDeshabilitado: {
+    backgroundColor: '#94a3b8',
+  },
+  textoBotonCarritoModal: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  quantitySection: {
+    width: '100%',
+    marginBottom: 18,
+    alignItems: 'center',
+  },
+  quantityLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 10,
+  },
+  quantityStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  quantityButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#14532d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantityButtonDisabled: {
+    backgroundColor: '#cbd5e1',
+  },
+  quantityButtonText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 24,
+  },
+  quantityValueBox: {
+    minWidth: 72,
+    paddingHorizontal: 18,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  quantityValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  quantityHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#64748b',
   },
   botonCerrar: {
     paddingHorizontal: 25,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 2,
+    paddingVertical: 11,
+    borderRadius: 18,
+    borderWidth: 1.5,
     borderColor: '#6c757d',
+    width: '100%',
+    alignItems: 'center',
   },
   textoBotonCerrar: {
     color: '#6c757d',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

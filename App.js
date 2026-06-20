@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -15,17 +15,22 @@ import EventosScreen from './components/EventosScreen';
 import RegisterScreen from './components/RegisterScreen';
 import SettingsScreen from './components/SettingsScreen';
 import PedidosScreen from './components/PedidosScreen';
+import ComprasScreen from './components/ComprasScreen';
+import CompraExitosaScreen from './components/CompraExitosaScreen';
 import PagosScreen from './components/PagosScreen';
 import CustomVentasButton from './components/OperacionesScreen';
 import CarritoScreen from './components/CarritoScreen';
 import CheckoutScreen from './components/CheckoutScreen';
 import SalesManagementScreen from './components/SalesManagementScreen';
 import { AuthProvider } from './context/AuthContext';
+import { CartProvider, useCart } from './context/CartContext';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function MainTabs() {
+  const { itemCount } = useCart();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -58,6 +63,7 @@ function MainTabs() {
         name="Carrito"
         component={CarritoScreen}
         options={{
+          tabBarBadge: itemCount > 0 ? itemCount : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="cart" size={size} color={color} />
           ),
@@ -106,9 +112,19 @@ function AppNavigator() {
             options={{ headerShown: true, title: 'Compra' }}
           />
           <Stack.Screen
+            name="CompraExitosa"
+            component={CompraExitosaScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ headerShown: true, title: 'ConfiguraciÃ³n' }}
+            options={{ headerShown: true, title: 'Configuración' }}
+          />
+          <Stack.Screen
+            name="Compras"
+            component={ComprasScreen}
+            options={{ headerShown: true, title: 'Mis compras' }}
           />
           <Stack.Screen
             name="Pedidos"
@@ -134,7 +150,10 @@ function AppNavigator() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppNavigator />
+      <CartProvider>
+        <AppNavigator />
+      </CartProvider>
     </AuthProvider>
   );
 }
+

@@ -6,17 +6,18 @@ const LOGIN_ENDPOINT = '/home/api_login';
 const normalizeText = (value) =>
   typeof value === 'string' ? value.trim() : '';
 
-const readJsonSafely = async (response) => {
+const readResponseSafely = async (response) => {
   const text = await response.text();
+  const normalizedText = text.replace(/^\uFEFF/, '').trim();
 
-  if (!text) {
-    return null;
+  if (!normalizedText) {
+    return { payload: null, rawText: '' };
   }
 
   try {
-    return JSON.parse(text);
+    return { payload: JSON.parse(normalizedText), rawText: text };
   } catch {
-    return { message: text };
+    return { payload: { message: normalizedText }, rawText: text };
   }
 };
 
@@ -55,10 +56,6 @@ export const loginWithBackend = async ({ cedula, password }) => {
   const loginValue = normalizeText(cedula);
   const normalizedPassword = normalizeText(password);
 
-  const formData = new FormData();
-  formData.append('cedula', loginValue);
-  formData.append('password', normalizedPassword);
-
   let response;
 
   try {
@@ -66,8 +63,12 @@ export const loginWithBackend = async ({ cedula, password }) => {
       method: 'POST',
       headers: {
         Accept: 'application/json',
+        'Content-Type': 'application/json',
       },
-      body: formData,
+      body: JSON.stringify({
+        cedula: loginValue,
+        password: normalizedPassword,
+      }),
     });
   } catch (error) {
     throw new Error(
@@ -77,13 +78,25 @@ export const loginWithBackend = async ({ cedula, password }) => {
     );
   }
 
-  const payload = await readJsonSafely(response);
+  const { payload, rawText } = await readResponseSafely(response);
 
   console.log('Respuesta login:', payload);
+  if (rawText) {
+    console.log('Respuesta login cruda:', rawText);
+  }
 
   if (!response.ok || payload?.success === false) {
+    if (rawText && !payload?.message && !payload?.error) {
+      throw new Error(
+        `El backend respondió con ${response.status}. Revisa la consola para ver el contenido de la respuesta.`
+      );
+    }
+
     throw new Error(
-      getMessageFromPayload(payload, 'No se pudo iniciar sesion')
+      getMessageFromPayload(
+        payload,
+        `No se pudo iniciar sesion (HTTP ${response.status})`
+      )
     );
   }
 

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
   ScrollView,
   Image,
   Platform,
@@ -72,8 +73,14 @@ const SalesManagementScreen = () => {
   // VISTA DE LISTA DE VENTAS
   if (currentView === 'list') {
     return (
-      <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           {/* HEADER */}
           <View style={styles.header}>
             <Image
@@ -130,7 +137,7 @@ const SalesManagementScreen = () => {
             </View>
           )}
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -435,8 +442,14 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
 
   // RENDERIZADO POR PASOS
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {/* HEADER */}
         <View style={styles.header}>
           <Image
@@ -868,7 +881,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 

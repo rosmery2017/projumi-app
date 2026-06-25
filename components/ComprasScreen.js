@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './../context/AuthContext';
 import { buildApiUrl } from './../config/api';
 import useFetch from './../hooks/useFetch';
+import { getDisplayName } from './../utils/userDisplay';
 
 const PEDIDOS_PATH = '/pedidos/mostrarPedidos';
 const PEDIDO_DETALLE_PATH = '/pedidos/consultarPedido';
@@ -46,6 +47,7 @@ const statusColor = (status) => {
 
 export default function ComprasScreen({ navigation }) {
   const { user, token, isReady } = useAuth();
+  const displayName = getDisplayName(user);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [pedidoDetalle, setPedidoDetalle] = useState(null);
@@ -163,7 +165,7 @@ export default function ComprasScreen({ navigation }) {
         <Ionicons name="receipt-outline" size={46} color="#94a3b8" />
         <Text style={styles.centerTitle}>Aun no tienes pedidos</Text>
         <Text style={styles.centerText}>
-          Aqui veras el historial de compras del usuario {user?.nombre || user?.correo || 'sesionado'}.
+          Aqui veras el historial de compras del usuario {displayName}.
         </Text>
         <TouchableOpacity
           style={styles.retryButton}
@@ -183,7 +185,7 @@ export default function ComprasScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Mis compras</Text>
           <Text style={styles.subtitle}>
-            Historial del usuario {user?.nombre || user?.correo || 'sesionado'}.
+            Historial del usuario {displayName}.
           </Text>
         </View>
         <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>

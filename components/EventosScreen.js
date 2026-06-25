@@ -3,10 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   ScrollView,
   TextInput,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import useFetch from './../hooks/useFetch';
@@ -125,10 +127,15 @@ const VentasEventos = () => {
   }
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.scrollContainer}
-      contentContainerStyle={styles.scrollContent}>
-      <View style={styles.container}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
+        <View style={styles.container}>
         <Text style={styles.titulo}> Ventas por Eventos</Text>
 
         <View style={styles.formulario}>
@@ -266,8 +273,9 @@ const VentasEventos = () => {
             </View>
           )}
         </View>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 

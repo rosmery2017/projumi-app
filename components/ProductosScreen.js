@@ -36,7 +36,14 @@ export default function ProductosScreen({ navigation, route }) {
   const productosPorPagina = 6;
   const entrepreneurFilter = route?.params?.entrepreneurFilter;
   const { token, isReady: authReady } = useAuth();
-  const { addToCart } = useCart();
+  const { items, addToCart } = useCart();
+  const cartQuantityById = useMemo(() => {
+    return items.reduce((acc, item) => {
+      acc[item.id] = Number(item.quantity) || 0;
+      return acc;
+    }, {});
+  }, [items]);
+
   const productosUrl = useMemo(() => {
     const baseUrl = buildApiUrl('/productos/mostrarProductos');
     if (!token) {
@@ -154,15 +161,33 @@ export default function ProductosScreen({ navigation, route }) {
   }
 
   const abrirDetalle = (producto) => {
+    const stockRestante = getAvailableStock(producto);
+    if (stockRestante === 0) {
+      Alert.alert('Sin stock', 'Ya agregaste todas las unidades disponibles de este producto.');
+      return;
+    }
+
     setProductoSeleccionado(producto);
     setCantidadSeleccionada(1);
     setModalVisible(true);
   };
 
-  const stockDisponible = Number(productoSeleccionado?.stock);
+  const getAvailableStock = (producto) => {
+    const stockDisponible = Number(producto?.stock);
+    if (!Number.isFinite(stockDisponible) || stockDisponible <= 0) {
+      return null;
+    }
+
+    const quantityInCart = Number(cartQuantityById[producto?.id] || 0);
+    return Math.max(0, stockDisponible - quantityInCart);
+  };
+
+  const stockRestanteSeleccionado = getAvailableStock(productoSeleccionado);
   const stockMaximo =
-    Number.isFinite(stockDisponible) && stockDisponible > 0 ? stockDisponible : null;
-  const puedeComprar = !Number.isFinite(stockDisponible) || stockDisponible > 0;
+    Number.isFinite(stockRestanteSeleccionado) && stockRestanteSeleccionado > 0
+      ? stockRestanteSeleccionado
+      : null;
+  const puedeComprar = stockMaximo === null || stockMaximo > 0;
 
   const ajustarCantidad = (delta) => {
     setCantidadSeleccionada((current) => {
@@ -175,14 +200,33 @@ export default function ProductosScreen({ navigation, route }) {
   };
 
   const anadirAlCarrito = (producto, cantidad = 1) => {
-    addToCart(producto, cantidad);
+    const stockRestante = getAvailableStock(producto);
+
+    if (stockRestante === 0) {
+      Alert.alert(
+        'Stock agotado',
+        'Ya no quedan unidades disponibles para este producto en tu carrito.'
+      );
+      return;
+    }
+
+    const cantidadSegura =
+      stockRestante === null ? cantidad : Math.min(cantidad, stockRestante);
+
+    addToCart(producto, cantidadSegura);
+
+    const alertButtons =
+      cantidadSegura < cantidad
+        ? [{ text: 'Entendido', style: 'default' }]
+        : [
+            { text: 'Seguir comprando', style: 'cancel' },
+            { text: 'Ver carrito', onPress: () => navigation.navigate('Carrito') },
+          ];
+
     Alert.alert(
       'Producto añadido',
-      `"${producto.nombre}" se añadió al carrito x${cantidad}.`,
-      [
-      { text: 'Seguir comprando', style: 'cancel' },
-      { text: 'Ver carrito', onPress: () => navigation.navigate('Carrito') },
-      ]
+      `"${producto.nombre}" se añadió al carrito x${cantidadSegura}.`,
+      alertButtons
     );
   };
 
@@ -211,7 +255,9 @@ export default function ProductosScreen({ navigation, route }) {
 
         <View style={styles.priceRow}>
           <Text style={styles.precio}>{formatPrice(item.precio)}</Text>
-          <Text style={styles.stock}>{item.stock ?? 'N/D'} stock</Text>
+          <Text style={styles.stock}>
+            {getAvailableStock(item) ?? item.stock ?? 'N/D'} stock
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -221,8 +267,12 @@ export default function ProductosScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.botonCarrito}
-          onPress={() => anadirAlCarrito(item)}>
+          style={[
+            styles.botonCarrito,
+            getAvailableStock(item) === 0 && styles.botonCarritoDeshabilitado,
+          ]}
+          onPress={() => anadirAlCarrito(item)}
+          disabled={getAvailableStock(item) === 0}>
           <Text style={styles.textoBotonCarrito}>Añadir al carrito</Text>
         </TouchableOpacity>
       </View>
@@ -391,8 +441,8 @@ export default function ProductosScreen({ navigation, route }) {
                   <Text style={styles.modalCategoria}>
                     Categoria: {productoSeleccionado.categoria || 'Sin categoria'}
                   </Text>
-                  <Text style={styles.modalStock}>
-                    Stock: {productoSeleccionado.stock ?? 'No disponible'}
+                <Text style={styles.modalStock}>
+                    Stock: {stockMaximo ?? productoSeleccionado.stock ?? 'No disponible'}
                   </Text>
                 </View>
 

@@ -11,27 +11,7 @@ import {
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { StackActions } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-
-const getDisplayName = (user) => {
-  if (!user) {
-    return 'Usuario';
-  }
-
-  const fullName = [user.name || user.nombre, user.apellido]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
-
-  return (
-    fullName ||
-    user.fullName ||
-    user.nombreCompleto ||
-    user.username ||
-    user.email ||
-    user.correo ||
-    'Usuario'
-  );
-};
+import { getDisplayName } from './../utils/userDisplay';
 
 const getMemberSince = (user) => {
   const rawDate =
@@ -130,27 +110,6 @@ const PerfilScreen = ({ route, navigation }) => {
           onPress={() => navigation.navigate('Compras')}>
           <Ionicons name="bag-check" size={22} color="#006400" />
           <Text style={styles.menuText}>Mis compras</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Pagos')}>
-          <Ionicons name="wallet" size={22} color="#006400" />
-          <Text style={styles.menuText}>Mis pagos</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Envios')}>
-          <Ionicons name="cube" size={22} color="#006400" />
-          <Text style={styles.menuText}>Mis envios</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Settings')}>
-          <Ionicons name="settings" size={22} color="#006400" />
-          <Text style={styles.menuText}>Configuracion</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

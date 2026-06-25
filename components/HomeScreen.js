@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import useFetch from './../hooks/useFetch';
 import { buildApiUrl } from './../config/api';
+import { useAuth } from './../context/AuthContext';
+import { getDisplayName } from './../utils/userDisplay';
 
 const HOME_API_PATH = '/emprendedor/mostrarEmprendedores';
 
@@ -25,6 +27,9 @@ const HomeScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('Ver Todo');
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedEntrepreneur, setSelectedEntrepreneur] = useState(null);
+  const { user } = useAuth();
+
+  const displayName = useMemo(() => getDisplayName(user), [user]);
 
   const { data, loading, error, refetch } = useFetch(
     buildApiUrl(HOME_API_PATH)
@@ -106,7 +111,7 @@ const HomeScreen = ({ navigation }) => {
     <>
       <View style={styles.headerContent}>
         <Icon name="store" size={60} color="#14532d" style={styles.icon} />
-        <Text style={styles.title}>¡Bienvenido, Jesús!</Text>
+        <Text style={styles.title}>¡Bienvenido, {displayName}!</Text>
         <Text style={styles.description}>
           Estás en <Text style={{ fontWeight: 'bold' }}>Projumi</Text>, una red
           exclusiva para emprendedores. Aquí podrás vender y descubrir productos

@@ -125,52 +125,33 @@ const RegisterScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={true}
-        keyboardShouldPersistTaps="handled">
-        {Platform.OS === 'web' ? (
-          <View style={styles.content}>
-            <Header />
-            <Form
-              formData={formData}
-              handleInputChange={handleInputChange}
-              showPassword={showPassword}
-              setShowPassword={setShowPassword}
-              showConfirmPassword={showConfirmPassword}
-              setShowConfirmPassword={setShowConfirmPassword}
-              terminosAceptados={terminosAceptados}
-              setTerminosAceptados={setTerminosAceptados}
-              isLoading={isLoading}
-              handleRegister={handleRegister}
-              goToLogin={goToLogin}
-            />
-          </View>
-        ) : (
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.keyboardAvoiding}>
-            <View style={styles.content}>
-              <Header />
-              <Form
-                formData={formData}
-                handleInputChange={handleInputChange}
-                showPassword={showPassword}
-                setShowPassword={setShowPassword}
-                showConfirmPassword={showConfirmPassword}
-                setShowConfirmPassword={setShowConfirmPassword}
-                terminosAceptados={terminosAceptados}
-                setTerminosAceptados={setTerminosAceptados}
-                isLoading={isLoading}
-                handleRegister={handleRegister}
-                goToLogin={goToLogin}
-              />
-            </View>
-          </KeyboardAvoidingView>
-        )}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
+        <View style={styles.content}>
+          <Header />
+          <Form
+            formData={formData}
+            handleInputChange={handleInputChange}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            showConfirmPassword={showConfirmPassword}
+            setShowConfirmPassword={setShowConfirmPassword}
+            terminosAceptados={terminosAceptados}
+            setTerminosAceptados={setTerminosAceptados}
+            isLoading={isLoading}
+            handleRegister={handleRegister}
+            goToLogin={goToLogin}
+          />
+        </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -349,9 +330,6 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     minHeight: Platform.OS === 'web' ? '100vh' : height,
-  },
-  keyboardAvoiding: {
-    flex: 1,
   },
   content: {
     flex: 1,

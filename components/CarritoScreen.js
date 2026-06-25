@@ -33,7 +33,14 @@ export default function CarritoScreen({ navigation }) {
           data={items}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const stockDisponible = Number(item.stock);
+            const canIncrease =
+              !Number.isFinite(stockDisponible) || stockDisponible <= 0
+                ? true
+                : item.quantity < stockDisponible;
+
+            return (
             <View style={styles.item}>
               {item.imagen ? (
                 <Image source={{ uri: item.imagen }} style={styles.image} />
@@ -47,6 +54,9 @@ export default function CarritoScreen({ navigation }) {
                 </Text>
                 <Text style={styles.productInfo}>
                   {formatPrice(item.precio)} c/u
+                </Text>
+                <Text style={styles.productStock}>
+                  Stock disponible: {Number.isFinite(stockDisponible) && stockDisponible > 0 ? stockDisponible : 'Sin límite'}
                 </Text>
                 <Text style={styles.subtotal}>
                   Subtotal: {formatPrice(item.precio * item.quantity)}
@@ -62,8 +72,14 @@ export default function CarritoScreen({ navigation }) {
                   <Text style={styles.quantity}>{item.quantity}</Text>
 
                   <TouchableOpacity
-                    style={styles.qtyButton}
-                    onPress={() => updateQuantity(item.id, item.quantity + 1)}>
+                    style={[
+                      styles.qtyButton,
+                      !canIncrease && styles.qtyButtonDisabled,
+                    ]}
+                    onPress={() =>
+                      canIncrease && updateQuantity(item.id, item.quantity + 1)
+                    }
+                    disabled={!canIncrease}>
                     <Text style={styles.qtyButtonText}>+</Text>
                   </TouchableOpacity>
 
@@ -75,7 +91,8 @@ export default function CarritoScreen({ navigation }) {
                 </View>
               </View>
             </View>
-          )}
+            );
+          }}
         />
       ) : (
         <View style={styles.emptyState}>
@@ -162,6 +179,11 @@ const styles = StyleSheet.create({
     color: '#4b5563',
     marginBottom: 2,
   },
+  productStock: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
   subtotal: {
     fontSize: 14,
     color: '#14532d',
@@ -181,6 +203,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#14532d',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  qtyButtonDisabled: {
+    backgroundColor: '#9ca3af',
   },
   qtyButtonText: {
     color: '#fff',

@@ -67,52 +67,33 @@ const LoginScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={true}
-        keyboardShouldPersistTaps="handled">
-        {Platform.OS === 'web' ? (
-          <View style={styles.content}>
-            <Header />
-            <Form
-              cedula={cedula}
-              setCedula={setCedula}
-              password={password}
-              setPassword={setPassword}
-              showPassword={showPassword}
-              setShowPassword={setShowPassword}
-              isLoading={isLoading}
-              handleLogin={handleLogin}
-              handleForgotPassword={handleForgotPassword}
-              handleSocialLogin={handleSocialLogin}
-              navigation={navigation}
-            />
-          </View>
-        ) : (
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.keyboardAvoiding}>
-            <View style={styles.content}>
-              <Header />
-              <Form
-                cedula={cedula}
-                setCedula={setCedula}
-                password={password}
-                setPassword={setPassword}
-                showPassword={showPassword}
-                setShowPassword={setShowPassword}
-                isLoading={isLoading}
-                handleLogin={handleLogin}
-                handleForgotPassword={handleForgotPassword}
-                handleSocialLogin={handleSocialLogin}
-                navigation={navigation}
-              />
-            </View>
-          </KeyboardAvoidingView>
-        )}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
+        <View style={styles.content}>
+          <Header />
+          <Form
+            cedula={cedula}
+            setCedula={setCedula}
+            password={password}
+            setPassword={setPassword}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            isLoading={isLoading}
+            handleLogin={handleLogin}
+            handleForgotPassword={handleForgotPassword}
+            handleSocialLogin={handleSocialLogin}
+            navigation={navigation}
+          />
+        </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -210,9 +191,6 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     minHeight: Platform.OS === 'web' ? '100vh' : height,
-  },
-  keyboardAvoiding: {
-    flex: 1,
   },
   content: {
     flex: 1,

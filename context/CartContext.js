@@ -5,6 +5,24 @@ const CART_STORAGE_KEY = 'projumi_cart_v1';
 
 const CartContext = createContext(null);
 
+const clampQuantity = (quantity, stock) => {
+  const numericQuantity = Number(quantity);
+  const normalizedQuantity = Number.isFinite(numericQuantity) && numericQuantity > 0
+    ? numericQuantity
+    : 1;
+
+  const numericStock = Number(stock);
+  if (Number.isFinite(numericStock) && numericStock > 0) {
+    return Math.min(normalizedQuantity, numericStock);
+  }
+
+  if (Number.isFinite(numericStock) && numericStock <= 0) {
+    return 0;
+  }
+
+  return normalizedQuantity;
+};
+
 const normalizeProduct = (product) => {
   if (!product) {
     return null;
@@ -17,6 +35,9 @@ const normalizeProduct = (product) => {
 
   const precio = Number(product.precio);
   const stock = Number(product.stock);
+  if (Number.isFinite(stock) && stock <= 0) {
+    return null;
+  }
 
   return {
     id,
@@ -33,7 +54,7 @@ const normalizeProduct = (product) => {
     descripcion: product.descripcion || null,
     emprendedor: product.emprendedor || null,
     stock: Number.isFinite(stock) ? stock : null,
-    quantity: Number(product.quantity) > 0 ? Number(product.quantity) : 1,
+    quantity: clampQuantity(product.quantity, stock),
     source: product.source || 'backend',
   };
 };
@@ -80,7 +101,7 @@ export const CartProvider = ({ children }) => {
 
   const addToCart = (product, quantity = 1) => {
     const normalizedProduct = normalizeProduct({ ...product, quantity });
-    if (!normalizedProduct) {
+    if (!normalizedProduct || normalizedProduct.quantity <= 0) {
       return;
     }
 
@@ -88,9 +109,14 @@ export const CartProvider = ({ children }) => {
       const existingItem = currentItems.find((item) => item.id === normalizedProduct.id);
 
       if (existingItem) {
+        const nextQuantity = clampQuantity(
+          existingItem.quantity + normalizedProduct.quantity,
+          existingItem.stock
+        );
+
         return currentItems.map((item) =>
           item.id === normalizedProduct.id
-            ? { ...item, quantity: item.quantity + normalizedProduct.quantity }
+            ? { ...item, quantity: nextQuantity }
             : item
         );
       }
@@ -108,7 +134,9 @@ export const CartProvider = ({ children }) => {
 
     setItems((currentItems) =>
       currentItems.map((item) =>
-        item.id === productId ? { ...item, quantity } : item
+        item.id === productId
+          ? { ...item, quantity: clampQuantity(quantity, item.stock) }
+          : item
       )
     );
   };

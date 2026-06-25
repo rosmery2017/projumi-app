@@ -3,16 +3,19 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   ScrollView,
   TouchableOpacity,
   TextInput,
   Alert,
   FlatList,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import * as DocumentPicker from 'expo-document-picker';
 import useFetch from './../hooks/useFetch';
 import { buildApiUrl } from './../config/api';
 import { useAuth } from './../context/AuthContext';
@@ -44,8 +47,28 @@ const steps = [
 const CHECKOUT_DRAFT_KEY = 'projumi_checkout_draft_v1';
 const EMPRESAS_ENVIO_PATH = '/empresa/getAllEmpresasEnvio';
 const PEDIDOS_REGISTRAR_PATH = '/pedidos/registrar';
+const MONEDAS_POR_METODO_PATH = '/pagos/monedasPorMetodo';
+const TASA_CAMBIO_PATH = '/tasa/consultarTasaBcv';
 
 const formatPrice = (value) => `$${Number(value || 0).toFixed(2)}`;
+const formatBsPrice = (value) => `Bs ${Number(value || 0).toFixed(2)}`;
+const paymentRequiresSupport = (methodId) => methodId === '2' || methodId === '3';
+const isBsLabel = (label = '') => String(label).toLowerCase().includes('bs');
+const createPaymentEntry = (seed = Date.now()) => ({
+  id: `payment-${seed}-${Math.random().toString(36).slice(2, 8)}`,
+  metodoPago: '',
+  detalleMetodoPago: '',
+  monedaLabel: '',
+  monto: '',
+  referencia: '',
+  comprobante: null,
+  comprobanteNombre: '',
+});
+const normalizePaymentEntry = (entry, index) => ({
+  ...createPaymentEntry(index + 1),
+  ...entry,
+  comprobante: null,
+});
 
 const getDisplayName = (user) => {
   if (!user) {
@@ -96,12 +119,11 @@ export default function CheckoutScreen({ navigation }) {
     direccionExacta: '',
     empresaEnvio: '',
     direccionEnvio: '',
-    metodoPago: '2',
-    moneda: 'USD',
-    referencia: '',
-    comprobante: '',
     observacion: '',
+    pagos: [createPaymentEntry()],
   });
+  const [currencyOptionsByMethod, setCurrencyOptionsByMethod] = useState({});
+  const [loadingMethods, setLoadingMethods] = useState({});
 
   const userDisplayName = useMemo(() => getDisplayName(user), [user]);
   const subtotal = total;
@@ -122,6 +144,11 @@ export default function CheckoutScreen({ navigation }) {
 
     return [];
   }, [empresasResponse]);
+  const { data: tasaResponse } = useFetch(buildApiUrl(TASA_CAMBIO_PATH));
+  const exchangeRate = useMemo(() => {
+    const rate = Number(tasaResponse?.data?.tasa_cambio || tasaResponse?.tasa_cambio || 0);
+    return Number.isFinite(rate) && rate > 0 ? rate : 0;
+  }, [tasaResponse]);
 
   useEffect(() => {
     const loadDraft = async () => {
@@ -133,7 +160,13 @@ export default function CheckoutScreen({ navigation }) {
 
         const parsedDraft = JSON.parse(storedDraft);
         if (parsedDraft?.form && typeof parsedDraft.form === 'object') {
-          setForm((current) => ({ ...current, ...parsedDraft.form }));
+          setForm((current) => ({
+            ...current,
+            ...parsedDraft.form,
+            pagos: Array.isArray(parsedDraft.form?.pagos) && parsedDraft.form.pagos.length
+              ? parsedDraft.form.pagos.map(normalizePaymentEntry)
+              : current.pagos,
+          }));
         }
 
         if (typeof parsedDraft?.step === 'number' && parsedDraft.step >= 1) {
@@ -160,7 +193,13 @@ export default function CheckoutScreen({ navigation }) {
           CHECKOUT_DRAFT_KEY,
           JSON.stringify({
             step,
-            form,
+            form: {
+              ...form,
+              pagos: paymentEntries.map((entry) => ({
+                ...entry,
+                comprobante: null,
+              })),
+            },
           })
         );
       } catch (error) {
@@ -185,6 +224,164 @@ export default function CheckoutScreen({ navigation }) {
       [field]: value,
     }));
   };
+  const paymentEntries = useMemo(
+    () => (Array.isArray(form.pagos) && form.pagos.length ? form.pagos : [createPaymentEntry()]),
+    [form.pagos]
+  );
+
+  const updatePaymentEntry = (paymentId, updates) => {
+    setForm((current) => ({
+      ...current,
+      pagos: (current.pagos || []).map((entry) =>
+        entry.id === paymentId ? { ...entry, ...updates } : entry
+      ),
+    }));
+  };
+
+  const addPaymentEntry = () => {
+    setForm((current) => ({
+      ...current,
+      pagos: [...(current.pagos || []), createPaymentEntry()],
+    }));
+  };
+
+  const removePaymentEntry = (paymentId) => {
+    if (paymentEntries.length === 1) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      pagos: (current.pagos || []).filter((entry) => entry.id !== paymentId),
+    }));
+  };
+
+  const loadCurrencyOptions = async (methodId) => {
+    if (!methodId || currencyOptionsByMethod[methodId] || loadingMethods[methodId]) {
+      return;
+    }
+
+    setLoadingMethods((current) => ({ ...current, [methodId]: true }));
+    try {
+      const response = await fetch(
+        buildApiUrl(`${MONEDAS_POR_METODO_PATH}?idMetodo=${encodeURIComponent(methodId)}`),
+        { headers: { Accept: 'application/json' } }
+      );
+      const payload = await readJsonSafely(response);
+
+      if (!response.ok || payload?.status === 'error') {
+        throw new Error(payload?.message || 'No se pudieron cargar las monedas.');
+      }
+
+      const options = Array.isArray(payload?.data)
+        ? payload.data.map((item) => ({
+            value: item.id_detalle_pago?.toString(),
+            label: item.simbolo,
+          }))
+        : [];
+
+      setCurrencyOptionsByMethod((current) => ({ ...current, [methodId]: options }));
+    } catch (error) {
+      console.log('Error al cargar monedas por metodo:', error?.message);
+      Alert.alert('Error', error?.message || 'No se pudieron cargar las monedas del metodo.');
+    } finally {
+      setLoadingMethods((current) => ({ ...current, [methodId]: false }));
+    }
+  };
+
+  useEffect(() => {
+    paymentEntries.forEach((entry) => {
+      if (entry.metodoPago) {
+        loadCurrencyOptions(entry.metodoPago);
+      }
+    });
+  }, [paymentEntries]);
+
+  const handleMethodChange = async (paymentId, methodId) => {
+    updatePaymentEntry(paymentId, {
+      metodoPago: methodId,
+      detalleMetodoPago: '',
+      monedaLabel: '',
+      referencia: '',
+      comprobante: null,
+      comprobanteNombre: '',
+    });
+    await loadCurrencyOptions(methodId);
+  };
+
+  const handleCurrencyChange = (paymentId, methodId, detailMethodId) => {
+    const options = currencyOptionsByMethod[methodId] || [];
+    const selectedOption = options.find((option) => option.value === detailMethodId);
+
+    updatePaymentEntry(paymentId, {
+      detalleMetodoPago: detailMethodId,
+      monedaLabel: selectedOption?.label || '',
+    });
+  };
+
+  const handlePickReceipt = async (paymentId) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*', 'application/pdf'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      const file = result.assets[0];
+      updatePaymentEntry(paymentId, {
+        comprobante: file,
+        comprobanteNombre: file.name || 'comprobante',
+      });
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo seleccionar el comprobante.');
+    }
+  };
+
+  const paymentTotals = useMemo(() => {
+    let totalUSD = 0;
+    let totalBs = 0;
+
+    paymentEntries.forEach((entry) => {
+      const amount = Number(entry.monto || 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return;
+      }
+
+      if (isBsLabel(entry.monedaLabel)) {
+        totalBs += amount;
+      } else {
+        totalUSD += amount;
+      }
+    });
+
+    const totalEquivalentUSD = totalUSD + (exchangeRate > 0 ? totalBs / exchangeRate : 0);
+    const remainingUSD = Math.max(0, totalFinal - totalEquivalentUSD);
+    const remainingBs = exchangeRate > 0 ? remainingUSD * exchangeRate : 0;
+
+    return {
+      totalUSD,
+      totalBs,
+      totalEquivalentUSD,
+      remainingUSD,
+      remainingBs,
+    };
+  }, [exchangeRate, paymentEntries, totalFinal]);
+
+  const hasBsPayment = paymentEntries.some((entry) => isBsLabel(entry.monedaLabel));
+  const hasValidPaymentRows = paymentEntries.every((entry) => {
+    const requiresSupport = paymentRequiresSupport(entry.metodoPago);
+    return Boolean(
+      entry.metodoPago &&
+      entry.detalleMetodoPago &&
+      Number(entry.monto) > 0 &&
+      (!requiresSupport || entry.referencia.trim()) &&
+      (!requiresSupport || entry.comprobante)
+    );
+  });
 
   const canGoNextFromStep = () => {
     if (step === 1) {
@@ -204,7 +401,12 @@ export default function CheckoutScreen({ navigation }) {
     }
 
     if (step === 3) {
-      return Boolean(form.metodoPago && form.moneda);
+      return Boolean(
+        paymentEntries.length &&
+        hasValidPaymentRows &&
+        (!hasBsPayment || exchangeRate > 0) &&
+        paymentTotals.remainingUSD <= 0.01
+      );
     }
 
     return true;
@@ -230,16 +432,12 @@ export default function CheckoutScreen({ navigation }) {
       })),
     };
 
-    const detallePago = {
-      detalles: [
-        {
-          fk_detalle_metodo_pago: Number(form.metodoPago),
-          monto: Number(totalFinal),
-          referencia: form.referencia.trim() || `APP-${Date.now()}`,
-          comprobante: form.comprobante.trim(),
-        },
-      ],
-    };
+    const detallePago = paymentEntries.map((entry, index) => ({
+      fk_detalle_metodo_pago: Number(entry.detalleMetodoPago),
+      monto: Number(entry.monto || 0),
+      referencia: entry.referencia.trim() || '',
+      comprobante: entry.comprobante ? `comprobante_${index}` : null,
+    }));
 
     const detalleEnvio =
       form.deliveryMode === 'delivery'
@@ -282,36 +480,60 @@ export default function CheckoutScreen({ navigation }) {
 
     setIsSubmitting(true);
     try {
+      const payload = buildCheckoutPayload();
+      const formData = new FormData();
+      formData.append('cedula', payload.cedula);
+      formData.append('detallePedido', JSON.stringify(payload.detallePedido));
+      formData.append('detallePago', JSON.stringify(payload.detallePago));
+      formData.append('detalleEnvio', JSON.stringify(payload.detalleEnvio));
+
+      paymentEntries.forEach((entry, index) => {
+        if (!entry.comprobante?.uri) {
+          return;
+        }
+
+        formData.append(`comprobante_${index}`, {
+          uri: entry.comprobante.uri,
+          name: entry.comprobante.name || entry.comprobanteNombre || `comprobante_${index}`,
+          type: entry.comprobante.mimeType || 'application/octet-stream',
+        });
+      });
+
       const response = await fetch(buildApiUrl(PEDIDOS_REGISTRAR_PATH), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify(buildCheckoutPayload()),
+        body: formData,
       });
 
-      const payload = await readJsonSafely(response);
+      const responsePayload = await readJsonSafely(response);
 
-      if (!response.ok || payload?.success === false) {
+      if (!response.ok || responsePayload?.success === false) {
         throw new Error(
-          payload?.message || payload?.error || `No se pudo registrar la compra (HTTP ${response.status})`
+          responsePayload?.message ||
+            responsePayload?.error ||
+            `No se pudo registrar la compra (HTTP ${response.status})`
         );
       }
 
       Alert.alert(
         'Compra registrada',
-        payload?.message || 'Tu pedido fue enviado al backend correctamente.'
+        responsePayload?.message || 'Tu pedido fue enviado al backend correctamente.'
       );
       clearCart();
       await clearDraft();
       navigation.navigate('CompraExitosa', {
-        pedidoId: payload?.pedido_id || payload?.pedido?.id_pedidos || null,
+        pedidoId: responsePayload?.pedido_id || responsePayload?.pedido?.id_pedidos || null,
         total: totalFinal,
-        metodoPago:
-          paymentMethods.find((item) => item.value === form.metodoPago)?.label ||
-          'No definido',
+        metodoPago: paymentEntries
+          .map((entry) => {
+            const methodLabel =
+              paymentMethods.find((item) => item.value === entry.metodoPago)?.label || 'Pago';
+            return `${methodLabel} ${entry.monedaLabel || ''} ${entry.monto}`.trim();
+          })
+          .join(' + '),
         deliveryMode: form.deliveryMode,
         empresaEnvio:
           empresasEnvio.find(
@@ -338,7 +560,10 @@ export default function CheckoutScreen({ navigation }) {
     }
 
     if (step === 3 && !canGoNextFromStep()) {
-      Alert.alert('Faltan datos', 'Selecciona el metodo de pago y la moneda.');
+      const message = hasBsPayment && exchangeRate <= 0
+        ? 'No se pudo obtener la tasa BCV para calcular el faltante en bolivares.'
+        : 'Completa los metodos de pago y cubre el total del pedido.';
+      Alert.alert('Faltan datos', message);
       return;
     }
 
@@ -407,8 +632,16 @@ export default function CheckoutScreen({ navigation }) {
   );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {renderProgress()}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
+        {renderProgress()}
 
       {step === 1 && (
         <Card title="Mi carrito" subtitle="Estos son los productos que has agregado.">
@@ -545,58 +778,139 @@ export default function CheckoutScreen({ navigation }) {
       )}
 
       {step === 3 && (
-        <Card title="Metodo de pago" subtitle="Selecciona como vas a pagar tu pedido.">
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Metodo de pago</Text>
-          </View>
-          <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={form.metodoPago}
-              onValueChange={(value) => updateForm('metodoPago', value)}>
-              {paymentMethods.map((method) => (
-                <Picker.Item key={method.value} label={method.label} value={method.value} />
-              ))}
-            </Picker>
+        <Card title="Metodos de pago" subtitle="Puedes combinar varios pagos hasta cubrir el total.">
+          <View style={styles.paymentSummaryBox}>
+            <Text style={styles.paymentSummaryText}>
+              Total en USD: {formatPrice(totalFinal)}
+            </Text>
+            {exchangeRate > 0 ? (
+              <Text style={styles.paymentSummaryText}>
+                Equivalente en Bs: {formatBsPrice(totalFinal * exchangeRate)}
+              </Text>
+            ) : null}
+            <Text style={styles.paymentSummaryText}>
+              Pagado: {formatPrice(paymentTotals.totalUSD)} + {formatBsPrice(paymentTotals.totalBs)}
+            </Text>
+            <Text
+              style={[
+                styles.paymentSummaryRemaining,
+                paymentTotals.remainingUSD > 0.01 && styles.paymentSummaryRemainingPending,
+              ]}>
+              Faltante: {formatPrice(paymentTotals.remainingUSD)}
+              {exchangeRate > 0 ? ` / ${formatBsPrice(paymentTotals.remainingBs)}` : ''}
+            </Text>
+            {hasBsPayment && !exchangeRate ? (
+              <Text style={styles.helperText}>
+                No se pudo cargar la tasa BCV, por ahora no podemos calcular el faltante en bolivares.
+              </Text>
+            ) : null}
           </View>
 
-          <Text style={styles.label}>Moneda</Text>
-          <View style={styles.chipRow}>
-            {currencies.map((currency) => (
-              <TouchableOpacity
-                key={currency.value}
-                style={[
-                  styles.chip,
-                  form.moneda === currency.value && styles.chipSelected,
-                ]}
-                onPress={() => updateForm('moneda', currency.value)}>
-                <Text
+          {paymentEntries.map((entry, index) => {
+            const requiresSupport = paymentRequiresSupport(entry.metodoPago);
+            const currencyOptions = currencyOptionsByMethod[entry.metodoPago] || [];
+
+            return (
+              <View key={entry.id} style={styles.paymentCard}>
+                <View style={styles.paymentCardHeader}>
+                  <Text style={styles.paymentCardTitle}>Pago {index + 1}</Text>
+                  {paymentEntries.length > 1 ? (
+                    <TouchableOpacity onPress={() => removePaymentEntry(entry.id)}>
+                      <Text style={styles.removePaymentText}>Eliminar</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                <Text style={styles.label}>Metodo de pago</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={entry.metodoPago}
+                    onValueChange={(value) => handleMethodChange(entry.id, value)}>
+                    <Picker.Item label="Selecciona un metodo..." value="" />
+                    {paymentMethods.map((method) => (
+                      <Picker.Item key={method.value} label={method.label} value={method.value} />
+                    ))}
+                  </Picker>
+                </View>
+
+                <Text style={styles.label}>Moneda</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={entry.detalleMetodoPago}
+                    onValueChange={(value) =>
+                      handleCurrencyChange(entry.id, entry.metodoPago, value)
+                    }
+                    enabled={Boolean(entry.metodoPago) && !loadingMethods[entry.metodoPago]}>
+                    <Picker.Item
+                      label={
+                        entry.metodoPago
+                          ? loadingMethods[entry.metodoPago]
+                            ? 'Cargando monedas...'
+                            : 'Selecciona una moneda...'
+                          : 'Selecciona primero un metodo'
+                      }
+                      value=""
+                    />
+                    {currencyOptions.map((option) => (
+                      <Picker.Item key={option.value} label={option.label} value={option.value} />
+                    ))}
+                  </Picker>
+                </View>
+
+                <Text style={styles.label}>Monto</Text>
+                <TextInput
+                  style={styles.input}
+                  value={entry.monto}
+                  onChangeText={(value) => updatePaymentEntry(entry.id, { monto: value })}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                />
+
+                <Text style={styles.label}>Referencia</Text>
+                <TextInput
+                  style={[styles.input, !requiresSupport && styles.inputDisabled]}
+                  value={entry.referencia}
+                  onChangeText={(value) => updatePaymentEntry(entry.id, { referencia: value })}
+                  placeholder={
+                    requiresSupport
+                      ? 'Numero de referencia'
+                      : 'No requerida para efectivo'
+                  }
+                  editable={requiresSupport}
+                  keyboardType={requiresSupport ? 'number-pad' : 'default'}
+                />
+
+                <Text style={styles.label}>Comprobante</Text>
+                <TouchableOpacity
                   style={[
-                    styles.chipText,
-                    form.moneda === currency.value && styles.chipTextSelected,
-                  ]}>
-                  {currency.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                    styles.fileButton,
+                    !requiresSupport && styles.fileButtonDisabled,
+                  ]}
+                  onPress={() => requiresSupport && handlePickReceipt(entry.id)}
+                  disabled={!requiresSupport}>
+                  <Ionicons
+                    name="document-attach-outline"
+                    size={18}
+                    color={requiresSupport ? '#14532d' : '#94a3b8'}
+                  />
+                  <Text
+                    style={[
+                      styles.fileButtonText,
+                      !requiresSupport && styles.fileButtonTextDisabled,
+                    ]}>
+                    {requiresSupport
+                      ? entry.comprobanteNombre || 'Seleccionar archivo'
+                      : 'No aplica para efectivo'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
 
-          <View style={styles.formBox}>
-            <Text style={styles.label}>Referencia</Text>
-            <TextInput
-              style={styles.input}
-              value={form.referencia}
-              onChangeText={(value) => updateForm('referencia', value)}
-              placeholder="Referencia del pago"
-            />
-
-            <Text style={styles.label}>Comprobante</Text>
-            <TextInput
-              style={styles.input}
-              value={form.comprobante}
-              onChangeText={(value) => updateForm('comprobante', value)}
-              placeholder="Codigo del comprobante"
-            />
-          </View>
+          <TouchableOpacity style={styles.secondaryActionButton} onPress={addPaymentEntry}>
+            <Ionicons name="add-circle-outline" size={18} color="#14532d" />
+            <Text style={styles.secondaryActionText}>Agregar metodo de pago</Text>
+          </TouchableOpacity>
         </Card>
       )}
 
@@ -657,15 +971,15 @@ export default function CheckoutScreen({ navigation }) {
 
           <View style={styles.userBox}>
             <Text style={styles.userBoxTitle}>Pago</Text>
-            <Text style={styles.userBoxText}>
-              Metodo:{' '}
-              {paymentMethods.find((item) => item.value === form.metodoPago)?.label ||
-                'No definido'}
-            </Text>
-            <Text style={styles.userBoxText}>Moneda: {form.moneda}</Text>
-            <Text style={styles.userBoxText}>
-              Referencia: {form.referencia || 'Sin referencia'}
-            </Text>
+            {paymentEntries.map((entry, index) => (
+              <Text key={entry.id} style={styles.userBoxText}>
+                Pago {index + 1}: {' '}
+                {(paymentMethods.find((item) => item.value === entry.metodoPago)?.label ||
+                  'No definido')}{' '}
+                {entry.monedaLabel || ''} {entry.monto || '0'} | Ref:{' '}
+                {entry.referencia || 'Sin referencia'}
+              </Text>
+            ))}
           </View>
 
           <View style={styles.summaryBox}>
@@ -699,7 +1013,8 @@ export default function CheckoutScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1010,6 +1325,52 @@ const styles = StyleSheet.create({
   formBox: {
     marginTop: 4,
   },
+  paymentSummaryBox: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  paymentSummaryText: {
+    color: '#1e3a8a',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  paymentSummaryRemaining: {
+    color: '#166534',
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  paymentSummaryRemainingPending: {
+    color: '#b45309',
+  },
+  paymentCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  paymentCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  paymentCardTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  removePaymentText: {
+    color: '#b91c1c',
+    fontWeight: '800',
+  },
   labelRow: {
     marginBottom: 8,
   },
@@ -1028,6 +1389,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 12,
     color: '#111827',
+  },
+  inputDisabled: {
+    backgroundColor: '#e5e7eb',
+    color: '#94a3b8',
   },
   pickerWrapper: {
     borderWidth: 1,
@@ -1061,6 +1426,45 @@ const styles = StyleSheet.create({
   },
   chipTextSelected: {
     color: '#14532d',
+  },
+  fileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  fileButtonDisabled: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+  },
+  fileButtonText: {
+    flex: 1,
+    color: '#14532d',
+    fontWeight: '700',
+  },
+  fileButtonTextDisabled: {
+    color: '#94a3b8',
+  },
+  secondaryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#14532d',
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginTop: 2,
+  },
+  secondaryActionText: {
+    color: '#14532d',
+    fontWeight: '800',
   },
   loaderBox: {
     flexDirection: 'row',

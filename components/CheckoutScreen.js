@@ -117,6 +117,8 @@ export default function CheckoutScreen({ navigation }) {
   const [form, setForm] = useState({
     deliveryMode: '',
     direccionExacta: '',
+    telefonoDestinatario: '',
+    correoDestinatario: '',
     empresaEnvio: '',
     direccionEnvio: '',
     observacion: '',
@@ -394,7 +396,11 @@ export default function CheckoutScreen({ navigation }) {
       }
 
       if (form.deliveryMode === 'delivery') {
-        return Boolean(form.direccionExacta.trim());
+        return Boolean(
+          form.direccionExacta.trim() &&
+            form.telefonoDestinatario.trim() &&
+            form.correoDestinatario.trim()
+        );
       }
 
       return Boolean(form.empresaEnvio.trim() && form.direccionEnvio.trim());
@@ -444,7 +450,8 @@ export default function CheckoutScreen({ navigation }) {
         ? {
             modoEntrega: 'delivery',
             destinatario: userDisplayName,
-            telefono_destinatario: user?.telefono || '',
+            telefono_destinatario: form.telefonoDestinatario.trim(),
+            correo_destinatario: form.correoDestinatario.trim(),
             direccion_exacta: form.direccionExacta.trim(),
             observacion: form.observacion.trim(),
           }
@@ -719,6 +726,23 @@ export default function CheckoutScreen({ navigation }) {
 
           {form.deliveryMode === 'delivery' && (
             <View style={styles.formBox}>
+              <Text style={styles.label}>Telefono destinatario</Text>
+              <TextInput
+                style={styles.input}
+                value={form.telefonoDestinatario}
+                onChangeText={(value) => updateForm('telefonoDestinatario', value)}
+                placeholder="Telefono de contacto"
+                keyboardType="phone-pad"
+              />
+              <Text style={styles.label}>Correo destinatario</Text>
+              <TextInput
+                style={styles.input}
+                value={form.correoDestinatario}
+                onChangeText={(value) => updateForm('correoDestinatario', value)}
+                placeholder="correo@ejemplo.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
               <Text style={styles.label}>Direccion exacta</Text>
               <TextInput
                 style={styles.input}
@@ -959,6 +983,16 @@ export default function CheckoutScreen({ navigation }) {
                 ? form.direccionExacta || 'Sin direccion'
                 : form.direccionEnvio || 'Sin direccion'}
             </Text>
+            {form.deliveryMode === 'delivery' ? (
+              <Text style={styles.userBoxText}>
+                Telefono: {form.telefonoDestinatario || 'No definido'}
+              </Text>
+            ) : null}
+            {form.deliveryMode === 'delivery' ? (
+              <Text style={styles.userBoxText}>
+                Correo: {form.correoDestinatario || 'No definido'}
+              </Text>
+            ) : null}
             {form.deliveryMode === 'nacional' ? (
               <Text style={styles.userBoxText}>
                 Empresa:{' '}

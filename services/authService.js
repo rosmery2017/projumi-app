@@ -106,23 +106,14 @@ export const loginWithBackend = async ({ cedula, password }) => {
     );
   }
 
-  // Guardar JWT
-  await AsyncStorage.setItem(
-    'jwt_token',
-    payload.token
-  );
+  const user = extractUser(payload, loginValue);
 
-  // Guardar usuario (opcional)
-  if (payload.user) {
-    await AsyncStorage.setItem(
-      'user_data',
-      JSON.stringify(payload.user)
-    );
-  }
+  await AsyncStorage.setItem('jwt_token', payload.token);
+  await AsyncStorage.setItem('user_data', JSON.stringify(user));
 
   return {
     token: payload.token,
-    user: extractUser(payload, loginValue),
+    user,
     raw: payload,
     endpoint: LOGIN_ENDPOINT,
   };

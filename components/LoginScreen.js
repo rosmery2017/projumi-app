@@ -19,7 +19,7 @@ const { height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }) => {
   const [cedula, setCedula] = useState('');
-  const [password, setPassword] = useState('123');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { signIn } = useAuth();
@@ -46,6 +46,8 @@ const LoginScreen = ({ navigation }) => {
     try {
       const session = await loginWithBackend({ cedula, password });
       signIn(session);
+      setCedula('');
+      setPassword('');
       navigation.replace('Home');
     } catch (error) {
       console.log('Login fallido:', error);
@@ -131,9 +133,13 @@ const Form = ({
         placeholder="Tu cédula"
         placeholderTextColor="#999"
         value={cedula}
-        onChangeText={setCedula}
+        onChangeText={(value) => setCedula(value.replace(/\D/g, '').slice(0, 10))}
         keyboardType="number-pad"
         autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
+        importantForAutofill="no"
       />
     </View>
 
@@ -148,6 +154,10 @@ const Form = ({
           onChangeText={setPassword}
           secureTextEntry={!showPassword}
           autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
         />
         <TouchableOpacity
           style={styles.eyeButton}

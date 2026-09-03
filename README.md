@@ -12,7 +12,7 @@ La app toma la URL base del backend desde:
 Variable:
 
 ```bash
-EXPO_PUBLIC_API_URL=http://192.168.100.103/projumi
+EXPO_PUBLIC_API_URL=http://192.168.100.9/projumi
 ```
 
 ## Qué debes cambiar

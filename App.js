@@ -13,7 +13,7 @@ import HomeScreen from './components/HomeScreen';
 import ProductosScreen from './components/ProductosScreen';
 import EnviosScreen from './components/EnviosScreen';
 import EventosScreen from './components/EventosScreen';
-import RegisterScreen from './components/RegisterScreen';
+import RegisterScreen from './components/ClientRegistrationScreen';
 import SettingsScreen from './components/SettingsScreen';
 import PedidosScreen from './components/PedidosScreen';
 import ComprasScreen from './components/ComprasScreen';

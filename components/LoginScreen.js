@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { loginWithBackend } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
+import { getImageUrl } from '../utils/imageUrl';
 
 const { height } = Dimensions.get('window');
 
@@ -103,7 +104,7 @@ const Header = () => (
   <View style={styles.header}>
     <Image
       source={{
-        uri: 'https://groupforcetechnology.ct.ws/public/imgn/IMG_4976.PNG',
+        uri: getImageUrl('/public/img/unnamed.jpg'),
       }}
       style={styles.logo}
     />

@@ -17,11 +17,9 @@ import useFetch from './../hooks/useFetch';
 import { buildApiUrl } from './../config/api';
 import { useAuth } from './../context/AuthContext';
 import { getDisplayName } from './../utils/userDisplay';
+import { getImageUrl } from './../utils/imageUrl';
 
 const HOME_API_PATH = '/emprendedor/mostrarEmprendedores';
-
-const getImageUrl = (imagePath) =>
-  imagePath?.startsWith('http') ? imagePath : buildApiUrl(imagePath || '');
 
 const HomeScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('Ver Todo');
@@ -57,7 +55,7 @@ const HomeScreen = ({ navigation }) => {
   });
 
   const handleComencemosPress = () => {
-    navigation.navigate('Productos');
+    navigation.navigate('Productos', { entrepreneurFilter: null });
   };
 
   const showEntrepreneurDetails = (entrepreneur) => {
@@ -70,9 +68,15 @@ const HomeScreen = ({ navigation }) => {
     setSelectedEntrepreneur(null);
   };
 
-  const handleViewProducts = (entrepreneurName) => {
+  const handleViewProducts = (entrepreneur) => {
     closeModal();
-    navigation.navigate('Productos', { entrepreneurFilter: entrepreneurName });
+    navigation.navigate('Productos', {
+      entrepreneurFilter: {
+        id_emprendedor: entrepreneur?.id_emprendedor,
+        emprendimiento: entrepreneur?.emprendimiento,
+        nombre_completo: entrepreneur?.nombre_completo,
+      },
+    });
   };
 
   const renderEntrepreneurCard = ({ item }) => {
@@ -216,7 +220,7 @@ const HomeScreen = ({ navigation }) => {
                 </ScrollView>
                 <TouchableOpacity
                   style={styles.viewProductsButton}
-                  onPress={() => handleViewProducts(selectedEntrepreneur.emprendimiento)}>
+                  onPress={() => handleViewProducts(selectedEntrepreneur)}>
                   <Text style={styles.viewProductsButtonText}>
                     🛒 Ver sus Productos
                   </Text>

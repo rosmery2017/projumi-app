@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,61 +13,109 @@ import {
   Modal,
   TouchableWithoutFeedback,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
+import { buildApiUrl } from '../config/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  fetchInPersonBcvRate,
+  fetchInPersonCurrencies,
+  fetchInPersonPaymentMethods,
+  fetchInPersonProducts,
+  fetchInPersonSaleDetail,
+  fetchInPersonSales,
+  findInPersonClient,
+  registerInPersonSale,
+} from '../services/inPersonSalesService';
 
 //  COMPONENTE PRINCIPAL - LISTA DE VENTAS
 const SalesManagementScreen = () => {
+  const { token, isReady } = useAuth();
   const [currentView, setCurrentView] = useState('list'); // 'list' o 'register'
   const [sales, setSales] = useState([]); // Lista de todas las ventas
+  const [loadingSales, setLoadingSales] = useState(false);
+  const [salesError, setSalesError] = useState('');
+  const [selectedSaleDetail, setSelectedSaleDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+
+  const loadSales = async () => {
+    if (!token) return;
+    setLoadingSales(true);
+    setSalesError('');
+    try {
+      const data = await fetchInPersonSales(token);
+      if (!Array.isArray(data)) throw new Error(data?.message || 'No se pudieron cargar las ventas.');
+      setSales(data);
+    } catch (error) {
+      setSalesError(error.message || 'No se pudieron cargar las ventas.');
+    } finally {
+      setLoadingSales(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isReady && token) loadSales();
+  }, [isReady, token]);
+
+  const openSaleDetail = async (sale) => {
+    setShowDetail(true);
+    setLoadingDetail(true);
+    setSelectedSaleDetail(null);
+    try {
+      const detail = await fetchInPersonSaleDetail(sale.id_pedidos, token);
+      setSelectedSaleDetail(detail);
+    } catch (error) {
+      Alert.alert('Detalle de venta', error.message || 'No se pudo cargar el detalle.');
+      setShowDetail(false);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   //  FUNCIÓN PARA AGREGAR NUEVA VENTA
-  const addNewSale = (saleData) => {
-    const newSale = {
-      id: Date.now().toString(),
-      timestamp: new Date().toLocaleString(),
-      ...saleData,
-    };
-    setSales((prevSales) => [newSale, ...prevSales]);
+  const addNewSale = async () => {
+    await loadSales();
     setCurrentView('list');
   };
 
   // FUNCIÓN PARA CALCULAR TOTAL DE VENTAS
   const calculateTotalSales = () => {
-    return sales.reduce((total, sale) => total + sale.total, 0);
+    return sales.reduce((total, sale) => total + Number(sale.total_comprado || 0), 0);
   };
 
   // RENDERIZAR ITEM DE VENTA
   const renderSaleItem = ({ item }) => (
-    <View style={styles.saleItem}>
+    <TouchableOpacity style={styles.saleItem} onPress={() => openSaleDetail(item)}>
       <View style={styles.saleHeader}>
-        <Text style={styles.saleId}>Venta #{item.id.slice(-4)}</Text>
-        <Text style={styles.saleDate}>{item.timestamp}</Text>
+        <Text style={styles.saleId}>Venta #{item.id_pedidos}</Text>
+        <Text style={styles.saleDate}>{item.fecha_pedido}</Text>
       </View>
 
       <View style={styles.saleDetails}>
         <Text style={styles.clientName}>
-          {item.clientData.nombre} {item.clientData.apellido}
+          {item.cliente}
         </Text>
         <Text style={styles.saleProducts}>
-          {item.products.length} producto(s)
+          Venta presencial
         </Text>
       </View>
 
       <View style={styles.saleFooter}>
-        <Text style={styles.saleTotal}>${item.total.toFixed(2)}</Text>
+        <Text style={styles.saleTotal}>${Number(item.total_comprado || 0).toFixed(2)}</Text>
         <View
           style={[
             styles.statusBadge,
-            item.status === 'completed'
+            item.estatus === 'Completado'
               ? styles.statusCompleted
               : styles.statusPending,
           ]}>
           <Text style={styles.statusText}>
-            {item.status === 'completed' ? 'Completada' : 'Pendiente'}
+            {item.estatus || 'Pendiente'}
           </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   // VISTA DE LISTA DE VENTAS
@@ -117,11 +165,20 @@ const SalesManagementScreen = () => {
           </TouchableOpacity>
 
           {/* LISTA DE VENTAS */}
-          {sales.length > 0 ? (
+          {loadingSales ? (
+            <ActivityIndicator size="large" color="#28a745" />
+          ) : salesError ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>{salesError}</Text>
+              <TouchableOpacity onPress={loadSales}>
+                <Text style={styles.addButtonText}>Reintentar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : sales.length > 0 ? (
             <FlatList
               data={sales}
               renderItem={renderSaleItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => String(item.id_pedidos)}
               style={styles.salesList}
               showsVerticalScrollIndicator={false}
               scrollEnabled={false}
@@ -137,6 +194,33 @@ const SalesManagementScreen = () => {
             </View>
           )}
         </ScrollView>
+        <Modal visible={showDetail} transparent animationType="slide" onRequestClose={() => setShowDetail(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.detailModalContent}>
+              <Text style={styles.modalTitle}>Detalle de venta</Text>
+              {loadingDetail ? (
+                <ActivityIndicator size="large" color="#14532d" />
+              ) : selectedSaleDetail ? (
+                <ScrollView>
+                  <Text style={styles.detailText}>Venta #{selectedSaleDetail.pedido?.id_pedidos}</Text>
+                  <Text style={styles.detailText}>Cliente: {selectedSaleDetail.pedido?.cliente_nombre} {selectedSaleDetail.pedido?.cliente_apellido}</Text>
+                  <Text style={styles.detailText}>Fecha: {selectedSaleDetail.pedido?.fecha_pedido}</Text>
+                  <Text style={styles.detailSectionTitle}>Productos</Text>
+                  {(selectedSaleDetail.productos || []).map((product, index) => (
+                    <View key={`${product.nombre_producto}-${index}`} style={styles.detailProduct}>
+                      <Text style={styles.detailText}>{product.nombre_producto} x{product.cantidad}</Text>
+                      <Text style={styles.detailText}>${(Number(product.cantidad) * Number(product.precio_unitario)).toFixed(2)}</Text>
+                    </View>
+                  ))}
+                  <Text style={styles.detailTotal}>Total: ${Number(selectedSaleDetail.total || 0).toFixed(2)}</Text>
+                </ScrollView>
+              ) : null}
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowDetail(false)}>
+                <Text style={styles.secondaryButtonText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     );
   }
@@ -146,12 +230,13 @@ const SalesManagementScreen = () => {
     <SalesRegisterScreen
       onSaveSale={addNewSale}
       onCancel={() => setCurrentView('list')}
+      token={token}
     />
   );
 };
 
 // COMPONENTE DE REGISTRO DE VENTA
-const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
+const SalesRegisterScreen = ({ onSaveSale, onCancel, token }) => {
   //ESTADO PARA CONTROLAR EL PASO ACTUAL
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -161,7 +246,12 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
     nombre: '',
     apellido: '',
     telefono: '',
+    correo: '',
+    direccion: '',
+    fecha_nacimiento: '',
   });
+  const [clientLookupLoading, setClientLookupLoading] = useState(false);
+  const [clientLookupMessage, setClientLookupMessage] = useState('');
 
   //  ESTADO PARA PRODUCTOS (PASO 2)
   const [products, setProducts] = useState([
@@ -178,8 +268,14 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
   const [showPaymentMethodPicker, setShowPaymentMethodPicker] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [paymentOptions, setPaymentOptions] = useState([]);
+  const [currencies, setCurrencies] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(0);
 
   // DATOS PREDEFINIDOS
+  /* Datos de demostracion sustituidos por las consultas al backend.
   const availableProducts = [
     { id: 1, name: 'Granolas', price: 1 },
     { id: 2, name: 'Gorras', price: 5 },
@@ -191,12 +287,75 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
   const paymentOptions = ['Efectivo', 'Pago Móvil', 'Transferencia', 'Tarjeta'];
   const currencies = ['Bs', '$'];
 
+  */
+  useEffect(() => {
+    if (!token) return;
+    Promise.all([fetchInPersonProducts(token), fetchInPersonPaymentMethods(token)])
+      .then(([productData, methodData]) => {
+        setAvailableProducts(Array.isArray(productData) ? productData : []);
+        setPaymentOptions(Array.isArray(methodData) ? methodData : []);
+      })
+      .catch((error) => Alert.alert('Ventas presenciales', error.message || 'No se pudo cargar el formulario.'));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchInPersonBcvRate(token).then(setExchangeRate).catch(() => setExchangeRate(0));
+  }, [token]);
+
   // FUNCIONES PARA EL PASO 1 - DATOS DEL CLIENTE
   const handleClientDataChange = (field, value) => {
+    const formatters = {
+      cedula: (nextValue) => nextValue.replace(/\D/g, '').slice(0, 10),
+      nombre: (nextValue) => nextValue.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]/g, '').slice(0, 45),
+      apellido: (nextValue) => nextValue.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]/g, '').slice(0, 45),
+      telefono: (nextValue) => nextValue.replace(/\D/g, '').slice(0, 15),
+      correo: (nextValue) => nextValue.slice(0, 45),
+      direccion: (nextValue) => nextValue.slice(0, 60),
+      fecha_nacimiento: (nextValue) => nextValue.slice(0, 10),
+    };
+
     setClientData((prev) => ({
       ...prev,
-      [field]: value,
+      [field]: formatters[field] ? formatters[field](value) : value,
     }));
+  };
+
+  const lookupClientByCedula = async () => {
+    const cedula = clientData.cedula.replace(/\D/g, '');
+
+    if (cedula.length < 7) {
+      setClientLookupMessage('');
+      return;
+    }
+
+    setClientLookupLoading(true);
+    setClientLookupMessage('');
+
+    try {
+      const payload = await findInPersonClient(cedula, token);
+
+      if (payload.status === 'success' && payload.data) {
+        setClientData((prev) => ({
+          ...prev,
+          cedula,
+          nombre: String(payload.data.nombre || ''),
+          apellido: String(payload.data.apellido || ''),
+          telefono: String(payload.data.telefono || ''),
+          correo: String(payload.data.correo || ''),
+          direccion: String(payload.data.direccion || ''),
+          fecha_nacimiento: String(payload.data.fecha_nacimiento || ''),
+        }));
+        setClientLookupMessage('Cliente encontrado. Datos autocompletados.');
+        return;
+      }
+
+      setClientLookupMessage('Cliente no encontrado. Completa los datos para registrarlo.');
+    } catch (error) {
+      setClientLookupMessage('No se pudo consultar la cédula. Puedes completar los datos manualmente.');
+    } finally {
+      setClientLookupLoading(false);
+    }
   };
 
   const validateStep1 = () => {
@@ -204,22 +363,25 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
       Alert.alert('Error', 'Por favor completa los campos obligatorios');
       return false;
     }
+    if (clientData.correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientData.correo.trim())) {
+      Alert.alert('Error', 'El correo electrónico no tiene un formato válido');
+      return false;
+    }
     return true;
   };
 
   // FUNCIONES PARA EL PASO 2 - PRODUCTOS
-  const handleProductSelect = (index, productName) => {
-    const selectedProduct = availableProducts.find(
-      (p) => p.name === productName
-    );
+  const handleProductSelect = (index, selectedProduct) => {
     const updatedProducts = [...products];
 
     if (selectedProduct) {
       updatedProducts[index] = {
         ...updatedProducts[index],
-        producto: productName,
-        precio: selectedProduct.price,
-        subtotal: selectedProduct.price * updatedProducts[index].cantidad,
+        producto: selectedProduct.nombre,
+        id_producto: Number(selectedProduct.id_producto),
+        stock: Number(selectedProduct.stock || 0),
+        precio: Number(selectedProduct.precio || 0),
+        subtotal: Number(selectedProduct.precio || 0) * updatedProducts[index].cantidad,
       };
     }
 
@@ -228,7 +390,10 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
 
   const handleQuantityChange = (index, quantity) => {
     const updatedProducts = [...products];
-    const qty = parseInt(quantity) || 0;
+    const requested = parseInt(quantity, 10) || 0;
+    const qty = updatedProducts[index].stock
+      ? Math.min(requested, updatedProducts[index].stock)
+      : requested;
 
     updatedProducts[index] = {
       ...updatedProducts[index],
@@ -263,7 +428,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
 
   const validateStep2 = () => {
     const hasEmptyProducts = products.some(
-      (product) => !product.producto || product.cantidad <= 0
+      (product) => !product.id_producto || product.cantidad <= 0 || product.cantidad > product.stock
     );
     if (hasEmptyProducts) {
       Alert.alert('Error', 'Por favor completa todos los productos');
@@ -273,6 +438,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
   };
 
   // FUNCIONES PARA EL PASO 3 - PAGOS
+  /* Implementacion anterior basada en opciones estaticas.
   const handlePaymentMethodChange = (index, method) => {
     const updatedMethods = [...paymentMethods];
     updatedMethods[index].metodo = method;
@@ -289,6 +455,30 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
   const handleCurrencyChange = (index, currency) => {
     const updatedMethods = [...paymentMethods];
     updatedMethods[index].moneda = currency;
+    setPaymentMethods(updatedMethods);
+  };
+
+  */
+  const handlePaymentMethodChange = (index, method) => {
+    const updatedMethods = [...paymentMethods];
+    updatedMethods[index] = {
+      ...updatedMethods[index],
+      metodo: method.nombre,
+      id_metodo_pago: method.id_metodo_pago,
+      moneda: '',
+      id_detalle_pago: '',
+      referencia: '',
+    };
+    setPaymentMethods(updatedMethods);
+    fetchInPersonCurrencies(method.id_metodo_pago, token)
+      .then((payload) => setCurrencies(Array.isArray(payload.data) ? payload.data : []))
+      .catch(() => setCurrencies([]));
+  };
+
+  const handleCurrencyChange = (index, currency) => {
+    const updatedMethods = [...paymentMethods];
+    updatedMethods[index].moneda = currency.simbolo;
+    updatedMethods[index].id_detalle_pago = currency.id_detalle_pago;
     setPaymentMethods(updatedMethods);
   };
 
@@ -324,7 +514,8 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
 
   const calculateTotalPaid = () => {
     return paymentMethods.reduce((total, method) => {
-      return total + (parseFloat(method.monto) || 0);
+      const amount = parseFloat(method.monto) || 0;
+      return total + (method.moneda === 'Bs' && exchangeRate > 0 ? amount / exchangeRate : amount);
     }, 0);
   };
 
@@ -333,11 +524,17 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
   };
 
   const isReferenceEnabled = (method) => {
-    return method === 'Pago Móvil' || method === 'Transferencia';
+    const normalizedMethod = String(method || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+
+    return normalizedMethod === 'pago movil' || normalizedMethod === 'transferencia';
   };
 
   const isCurrencySelectable = (method) => {
-    return method === 'Efectivo';
+    return Boolean(method);
   };
 
   const validateStep3 = () => {
@@ -353,7 +550,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
     }
 
     for (let method of paymentMethods) {
-      if (!method.metodo || !method.monto || parseFloat(method.monto) <= 0) {
+      if (!method.id_metodo_pago || !method.id_detalle_pago || !method.monto || parseFloat(method.monto) <= 0) {
         Alert.alert('Error', 'Completa todos los métodos de pago');
         return false;
       }
@@ -392,6 +589,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
     );
   };
 
+  /* Registro local anterior.
   const handleRegisterSale = () => {
     if (!validateStep3()) return;
 
@@ -413,6 +611,34 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
       }`,
       [{ text: 'OK' }]
     );
+  };
+
+  */
+  const handleRegisterSale = async () => {
+    if (!validateStep3() || calculateTotalPaid() > calculateTotal() * 2) return;
+    setSubmitting(true);
+    try {
+      const result = await registerInPersonSale({
+        datos_cliente: clientData,
+        productos: products.map((product) => ({
+          id_producto: product.id_producto,
+          cantidad: product.cantidad,
+          precio_unitario: product.precio,
+        })),
+        metodos_pago: paymentMethods.map((method) => ({
+          id_metodo_pago: method.id_detalle_pago,
+          monto: method.monto,
+          ...(isReferenceEnabled(method.metodo) ? { referencia: method.referencia } : {}),
+        })),
+      }, token);
+      if (!result.success) throw new Error(result.message || 'No se pudo registrar la venta.');
+      Alert.alert('Venta registrada', 'La venta presencial se registró correctamente.');
+      await onSaveSale();
+    } catch (error) {
+      Alert.alert('Error al registrar venta', error.message || 'No se pudo registrar la venta.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   //COMPONENTE DE PROGRESO
@@ -476,12 +702,22 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                 <Text style={styles.label}>Cédula *</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ej: V-12345678"
+                  placeholder="Ej: 12345678"
                   value={clientData.cedula}
                   onChangeText={(text) =>
                     handleClientDataChange('cedula', text)
                   }
+                  onBlur={lookupClientByCedula}
+                  keyboardType="number-pad"
                 />
+                {clientLookupLoading ? (
+                  <View style={styles.lookupRow}>
+                    <ActivityIndicator color="#14532d" size="small" />
+                    <Text style={styles.lookupText}>Consultando cliente...</Text>
+                  </View>
+                ) : clientLookupMessage ? (
+                  <Text style={styles.lookupText}>{clientLookupMessage}</Text>
+                ) : null}
               </View>
 
               <View style={styles.row}>
@@ -514,12 +750,51 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                 <Text style={styles.label}>Teléfono</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ej: 0412-1234567"
+                  placeholder="Ej: 04121234567"
                   value={clientData.telefono}
                   onChangeText={(text) =>
                     handleClientDataChange('telefono', text)
                   }
                   keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Correo electrónico</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="correo@ejemplo.com"
+                  value={clientData.correo}
+                  onChangeText={(text) =>
+                    handleClientDataChange('correo', text)
+                  }
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Dirección</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Dirección del cliente"
+                  value={clientData.direccion}
+                  onChangeText={(text) =>
+                    handleClientDataChange('direccion', text)
+                  }
+                  multiline
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Fecha de nacimiento</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  value={clientData.fecha_nacimiento}
+                  onChangeText={(text) =>
+                    handleClientDataChange('fecha_nacimiento', text)
+                  }
                 />
               </View>
 
@@ -624,6 +899,11 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                 <Text style={styles.totalText}>
                   Total a Pagar: ${calculateTotal().toFixed(2)}
                 </Text>
+                {exchangeRate > 0 && (
+                  <Text style={styles.totalBsText}>
+                    Total en Bs: Bs {(calculateTotal() * exchangeRate).toFixed(2)}
+                  </Text>
+                )}
               </View>
 
               {/* BOTONES PASO 2 */}
@@ -647,6 +927,11 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
               <Text style={styles.totalText}>
                 Total: ${calculateTotal().toFixed(2)}
               </Text>
+              {exchangeRate > 0 && (
+                <Text style={styles.totalBsText}>
+                  Total en Bs: Bs {(calculateTotal() * exchangeRate).toFixed(2)}
+                </Text>
+              )}
 
               {paymentMethods.map((method, index) => (
                 <View key={method.id} style={styles.paymentContainer}>
@@ -726,6 +1011,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                     />
                   </View>
 
+                  {isReferenceEnabled(method.metodo) && (
                   <View style={styles.inputContainer}>
                     <Text style={styles.label}>
                       Referencia {isReferenceEnabled(method.metodo) ? '*' : ''}
@@ -748,6 +1034,7 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                       editable={isReferenceEnabled(method.metodo)}
                     />
                   </View>
+                  )}
 
                   {index < paymentMethods.length - 1 && (
                     <View style={styles.separator} />
@@ -767,6 +1054,11 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                 <Text style={styles.summaryText}>
                   Total Pagado: ${calculateTotalPaid().toFixed(2)}
                 </Text>
+                {exchangeRate > 0 && (
+                  <Text style={styles.summaryText}>
+                    Total Pagado: Bs {(calculateTotalPaid() * exchangeRate).toFixed(2)}
+                  </Text>
+                )}
                 <Text
                   style={[
                     styles.summaryText,
@@ -777,6 +1069,11 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                   Monto Faltante: $
                   {Math.max(0, calculateRemaining()).toFixed(2)}
                 </Text>
+                {exchangeRate > 0 && (
+                  <Text style={styles.summaryText}>
+                    Monto Faltante: Bs {(Math.max(0, calculateRemaining()) * exchangeRate).toFixed(2)}
+                  </Text>
+                )}
               </View>
 
               {/* BOTONES PASO 3 - PROPORCIONALES */}
@@ -794,11 +1091,11 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
                 <TouchableOpacity
                   style={[
                     styles.registerButton,
-                    calculateRemaining() > 0 && styles.registerButtonDisabled,
+                    (calculateRemaining() > 0 || submitting) && styles.registerButtonDisabled,
                   ]}
                   onPress={handleRegisterSale}
-                  disabled={calculateRemaining() > 0}>
-                  <Text style={styles.registerButtonText}>Registrar Venta</Text>
+                  disabled={calculateRemaining() > 0 || submitting}>
+                  <Text style={styles.registerButtonText}>{submitting ? 'Registrando...' : 'Registrar Venta'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -817,14 +1114,14 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
               <Text style={styles.modalTitle}>Seleccionar Producto</Text>
               {availableProducts.map((product) => (
                 <TouchableOpacity
-                  key={product.id}
+                  key={String(product.id_producto)}
                   style={styles.modalOption}
                   onPress={() => {
-                    handleProductSelect(activeIndex, product.name);
+                    handleProductSelect(activeIndex, product);
                     setShowProductPicker(false);
                   }}>
                   <Text style={styles.modalOptionText}>
-                    {product.name} - ${product.price}
+                    {product.nombre} - ${Number(product.precio || 0).toFixed(2)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -844,13 +1141,13 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
               <Text style={styles.modalTitle}>Seleccionar Método</Text>
               {paymentOptions.map((option) => (
                 <TouchableOpacity
-                  key={option}
+                  key={String(option.id_metodo_pago)}
                   style={styles.modalOption}
                   onPress={() => {
                     handlePaymentMethodChange(activeIndex, option);
                     setShowPaymentMethodPicker(false);
                   }}>
-                  <Text style={styles.modalOptionText}>{option}</Text>
+                  <Text style={styles.modalOptionText}>{option.nombre}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -868,13 +1165,13 @@ const SalesRegisterScreen = ({ onSaveSale, onCancel }) => {
               <Text style={styles.modalTitle}>Seleccionar Moneda</Text>
               {currencies.map((currency) => (
                 <TouchableOpacity
-                  key={currency}
+                  key={String(currency.id_detalle_pago)}
                   style={styles.modalOption}
                   onPress={() => {
                     handleCurrencyChange(activeIndex, currency);
                     setShowCurrencyPicker(false);
                   }}>
-                  <Text style={styles.modalOptionText}>{currency}</Text>
+                  <Text style={styles.modalOptionText}>{currency.simbolo}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1115,6 +1412,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
+  textArea: {
+    minHeight: 82,
+    textAlignVertical: 'top',
+  },
+  lookupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  lookupText: {
+    color: '#14532d',
+    fontSize: 12,
+    marginTop: 8,
+  },
   disabledInput: {
     backgroundColor: '#f0f0f0',
     color: '#666',
@@ -1216,6 +1528,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#28a745',
   },
+  totalBsText: {
+    color: '#166534',
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 5,
+  },
   paymentSummary: {
     backgroundColor: '#f8f9fa',
     padding: 15,
@@ -1300,6 +1618,50 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '80%',
     maxWidth: 300,
+  },
+  detailModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    maxHeight: '78%',
+    padding: 20,
+    width: '88%',
+  },
+  detailText: {
+    color: '#374151',
+    fontSize: 14,
+    marginBottom: 7,
+  },
+  detailSectionTitle: {
+    color: '#14532d',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  detailProduct: {
+    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  detailTotal: {
+    color: '#14532d',
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 14,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: '#14532d',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 16,
+    paddingVertical: 11,
+  },
+  secondaryButtonText: {
+    color: '#14532d',
+    fontWeight: '800',
   },
   modalTitle: {
     fontSize: 18,

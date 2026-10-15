@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import useFetch from './../hooks/useFetch';
 import { buildApiUrl } from './../config/api';
 import { useAuth } from './../context/AuthContext';
 import { useCart } from './../context/CartContext';
+import { getImageUrl } from './../utils/imageUrl';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +36,32 @@ export default function ProductosScreen({ navigation, route }) {
   const [searchTerm, setSearchTerm] = useState('');
   const productosPorPagina = 6;
   const entrepreneurFilter = route?.params?.entrepreneurFilter;
+  const normalizedEntrepreneurFilter = useMemo(() => {
+    if (!entrepreneurFilter) {
+      return null;
+    }
+
+    if (typeof entrepreneurFilter === 'object') {
+      return {
+        id:
+          entrepreneurFilter.id_emprendedor?.toString?.() ||
+          entrepreneurFilter.id_emprededor?.toString?.() ||
+          '',
+        values: [
+          entrepreneurFilter.emprendimiento,
+          entrepreneurFilter.nombre_completo,
+          entrepreneurFilter.nombre,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase()),
+      };
+    }
+
+    return {
+      id: '',
+      values: [String(entrepreneurFilter).trim().toLowerCase()],
+    };
+  }, [entrepreneurFilter]);
   const { token, isReady: authReady } = useAuth();
   const { items, addToCart } = useCart();
   const cartQuantityById = useMemo(() => {
@@ -86,10 +113,12 @@ export default function ProductosScreen({ navigation, route }) {
       categoria: item.categoria,
       descripcion: item.descripcion,
       emprendedor: item.emprendedor,
-      imagen: item.imagenes?.[0] ? buildApiUrl(item.imagenes[0]) : null,
+      imagen: item.imagenes?.[0] ? getImageUrl(item.imagenes[0], '') : null,
       stock: item.stock,
       id_categoria: item.id_categoria,
-      id_emprededor: item.id_emprededor,
+      id_emprendedor: item.id_emprendedor ?? item.id_emprededor,
+      id_emprededor: item.id_emprededor ?? item.id_emprendedor,
+      emprendimiento: item.emprendimiento,
       status: item.status,
       fecha_ingreso: item.fecha_ingreso,
     }));
@@ -116,10 +145,24 @@ export default function ProductosScreen({ navigation, route }) {
         categoriaSeleccionada === 'Todos' ||
         producto.categoria === categoriaSeleccionada;
 
+      const productoIdEmprendedor =
+        producto.id_emprendedor?.toString?.() ||
+        producto.id_emprededor?.toString?.() ||
+        '';
+      const nombresProducto = [
+        producto.emprendedor,
+        producto.emprendimiento,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).trim().toLowerCase());
+
       const emprendedorValido =
-        !entrepreneurFilter ||
-        producto.emprendedor === entrepreneurFilter ||
-        producto.id_emprededor?.toString() === entrepreneurFilter?.toString();
+        !normalizedEntrepreneurFilter ||
+        (normalizedEntrepreneurFilter.id &&
+          productoIdEmprendedor === normalizedEntrepreneurFilter.id) ||
+        normalizedEntrepreneurFilter.values.some((value) =>
+          nombresProducto.includes(value)
+        );
 
       const searchValido =
         !searchTerm ||
@@ -129,7 +172,11 @@ export default function ProductosScreen({ navigation, route }) {
 
       return categoriaValida && emprendedorValido && searchValido;
     });
-  }, [categoriaSeleccionada, entrepreneurFilter, productos, searchTerm]);
+  }, [categoriaSeleccionada, normalizedEntrepreneurFilter, productos, searchTerm]);
+
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [categoriaSeleccionada, normalizedEntrepreneurFilter, searchTerm]);
 
   const indiceInicial = (paginaActual - 1) * productosPorPagina;
   const indiceFinal = indiceInicial + productosPorPagina;
@@ -199,6 +246,12 @@ export default function ProductosScreen({ navigation, route }) {
     });
   };
 
+  const actualizarCantidadManual = (value) => {
+    const numericValue = Number(String(value).replace(/\D/g, ''));
+    const cantidad = Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 1;
+    setCantidadSeleccionada(stockMaximo ? Math.min(cantidad, stockMaximo) : cantidad);
+  };
+
   const anadirAlCarrito = (producto, cantidad = 1) => {
     const stockRestante = getAvailableStock(producto);
 
@@ -213,7 +266,17 @@ export default function ProductosScreen({ navigation, route }) {
     const cantidadSegura =
       stockRestante === null ? cantidad : Math.min(cantidad, stockRestante);
 
-    addToCart(producto, cantidadSegura);
+    const cartResult = addToCart(producto, cantidadSegura);
+
+    if (!cartResult?.success) {
+      Alert.alert(
+        cartResult?.reason === 'different_entrepreneur'
+          ? 'Compra de un solo emprendedor'
+          : 'No se pudo agregar',
+        cartResult?.message || 'No se pudo agregar el producto al carrito.'
+      );
+      return;
+    }
 
     const alertButtons =
       cantidadSegura < cantidad
@@ -459,9 +522,14 @@ export default function ProductosScreen({ navigation, route }) {
                       <Text style={styles.quantityButtonText}>-</Text>
                     </TouchableOpacity>
 
-                    <View style={styles.quantityValueBox}>
-                      <Text style={styles.quantityValue}>{cantidadSeleccionada}</Text>
-                    </View>
+                    <TextInput
+                      style={styles.quantityValueInput}
+                      value={String(cantidadSeleccionada)}
+                      onChangeText={actualizarCantidadManual}
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                      editable={puedeComprar}
+                    />
 
                     <TouchableOpacity
                       style={[
@@ -890,7 +958,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 24,
   },
-  quantityValueBox: {
+  quantityValueInput: {
     minWidth: 72,
     paddingHorizontal: 18,
     height: 42,
@@ -900,11 +968,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
-  },
-  quantityValue: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0f172a',
+    textAlign: 'center',
   },
   quantityHint: {
     marginTop: 8,
@@ -926,3 +993,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
+
+

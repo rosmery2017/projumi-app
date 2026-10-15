@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import LoginScreen from './components/LoginScreen';
 import PerfilScreen from './components/PerfilScreen';
+import MiPerfilScreen from './components/MiPerfilScreen';
 import HomeScreen from './components/HomeScreen';
 import ProductosScreen from './components/ProductosScreen';
 import EnviosScreen from './components/EnviosScreen';
@@ -122,14 +123,19 @@ function AppNavigator() {
             options={{ headerShown: true, title: 'Configuración' }}
           />
           <Stack.Screen
+            name="MiPerfil"
+            component={MiPerfilScreen}
+            options={{ headerShown: true, title: 'Mi perfil' }}
+          />
+          <Stack.Screen
             name="Compras"
             component={ComprasScreen}
-            options={{ headerShown: true, title: 'Mis compras' }}
+            options={{ headerShown: true, title: 'Mis pedidos' }}
           />
           <Stack.Screen
             name="Pedidos"
             component={PedidosScreen}
-            options={{ headerShown: true, title: 'Mis Pedidos' }}
+            options={{ headerShown: true, title: 'Ventas por evento' }}
           />
           <Stack.Screen
             name="Envios"

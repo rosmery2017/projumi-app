@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CART_STORAGE_KEY = 'projumi_cart_v1';
+const CHECKOUT_DRAFT_KEY = 'projumi_checkout_draft_v1';
 
 const CartContext = createContext(null);
 
@@ -59,6 +60,8 @@ const normalizeProduct = (product) => {
   };
 };
 
+const getEntrepreneurKey = (item) => item?.id_emprendedor?.toString?.() || null;
+
 export const CartProvider = ({ children }) => {
   const [items, setItems] = useState([]);
   const [ready, setReady] = useState(false);
@@ -97,15 +100,54 @@ export const CartProvider = ({ children }) => {
         console.log('No se pudo guardar el carrito:', error?.message);
       }
     );
+
+    if (items.length === 0) {
+      AsyncStorage.removeItem(CHECKOUT_DRAFT_KEY).catch((error) => {
+        console.log('No se pudo limpiar el borrador del checkout:', error?.message);
+      });
+    }
   }, [items, ready]);
 
   const addToCart = (product, quantity = 1) => {
     const normalizedProduct = normalizeProduct({ ...product, quantity });
     if (!normalizedProduct || normalizedProduct.quantity <= 0) {
-      return;
+      return {
+        success: false,
+        reason: 'invalid_product',
+        message: 'No se pudo agregar el producto al carrito.',
+      };
     }
 
+    let result = {
+      success: true,
+      reason: 'added',
+      message: 'Producto agregado al carrito.',
+      quantity: normalizedProduct.quantity,
+    };
+
     setItems((currentItems) => {
+      const currentEntrepreneur = currentItems.find((item) => getEntrepreneurKey(item));
+      const currentEntrepreneurId = getEntrepreneurKey(currentEntrepreneur);
+      const nextEntrepreneurId = getEntrepreneurKey(normalizedProduct);
+
+      if (
+        currentItems.length > 0 &&
+        currentEntrepreneurId &&
+        nextEntrepreneurId &&
+        currentEntrepreneurId !== nextEntrepreneurId
+      ) {
+        result = {
+          success: false,
+          reason: 'different_entrepreneur',
+          message:
+            'Ya tienes productos de otro emprendedor en el carrito. Finaliza esa compra o vacia el carrito antes de comprar a otro emprendedor.',
+          currentEntrepreneur: currentEntrepreneur?.emprendedor || null,
+          nextEntrepreneur: normalizedProduct.emprendedor || null,
+        };
+
+        return currentItems;
+      }
+
       const existingItem = currentItems.find((item) => item.id === normalizedProduct.id);
 
       if (existingItem) {
@@ -113,6 +155,7 @@ export const CartProvider = ({ children }) => {
           existingItem.quantity + normalizedProduct.quantity,
           existingItem.stock
         );
+        result.quantity = nextQuantity;
 
         return currentItems.map((item) =>
           item.id === normalizedProduct.id
@@ -123,6 +166,8 @@ export const CartProvider = ({ children }) => {
 
       return [...currentItems, normalizedProduct];
     });
+
+    return result;
   };
 
   const updateQuantity = (productId, nextQuantity) => {

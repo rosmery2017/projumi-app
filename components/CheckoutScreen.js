@@ -27,10 +27,10 @@ const deliveryModes = [
 ];
 
 const paymentMethods = [
-  { label: 'Efectivo', value: '1' },
   { label: 'Transferencia', value: '2' },
   { label: 'Pago móvil', value: '3' },
 ];
+const allowedPaymentMethodValues = paymentMethods.map((method) => method.value);
 
 const currencies = [
   { label: 'USD', value: 'USD' },
@@ -54,6 +54,68 @@ const formatPrice = (value) => `$${Number(value || 0).toFixed(2)}`;
 const formatBsPrice = (value) => `Bs ${Number(value || 0).toFixed(2)}`;
 const paymentRequiresSupport = (methodId) => methodId === '2' || methodId === '3';
 const isBsLabel = (label = '') => String(label).toLowerCase().includes('bs');
+const getReceiptMimeType = (file) => {
+  if (file?.mimeType) {
+    return file.mimeType;
+  }
+
+  const name = String(file?.name || '').toLowerCase();
+  if (name.endsWith('.pdf')) {
+    return 'application/pdf';
+  }
+
+  if (name.endsWith('.png')) {
+    return 'image/png';
+  }
+
+  if (name.endsWith('.webp')) {
+    return 'image/webp';
+  }
+
+  return 'image/jpeg';
+};
+
+const normalizeReceiptFile = (file, fallbackName = 'comprobante') => {
+  if (!file?.uri) {
+    return null;
+  }
+
+  const rawName = file.name || `${fallbackName}.jpg`;
+  const safeName = String(rawName).replace(/[^\w.\-]/g, '_');
+
+  return {
+    uri: String(file.uri),
+    name: safeName || `${fallbackName}.jpg`,
+    type: getReceiptMimeType(file),
+  };
+};
+
+const appendReceiptToFormData = async (formData, fieldName, file) => {
+  if (!file?.uri) {
+    return;
+  }
+
+  const normalizedFile = normalizeReceiptFile(file, fieldName);
+  if (!normalizedFile) {
+    return;
+  }
+
+  try {
+    const fileResponse = await fetch(normalizedFile.uri);
+    const fileBlob = await fileResponse.blob();
+
+    formData.append(fieldName, fileBlob, normalizedFile.name);
+  } catch (error) {
+    console.log('No se pudo convertir el comprobante a Blob:', error?.message);
+
+    formData.append(fieldName, {
+      uri: normalizedFile.uri,
+      name: normalizedFile.name,
+      type: normalizedFile.type,
+    });
+  }
+};
+
 const createPaymentEntry = (seed = Date.now()) => ({
   id: `payment-${seed}-${Math.random().toString(36).slice(2, 8)}`,
   metodoPago: '',
@@ -67,8 +129,44 @@ const createPaymentEntry = (seed = Date.now()) => ({
 const normalizePaymentEntry = (entry, index) => ({
   ...createPaymentEntry(index + 1),
   ...entry,
+  metodoPago: allowedPaymentMethodValues.includes(String(entry?.metodoPago || ''))
+    ? String(entry.metodoPago)
+    : '',
+  detalleMetodoPago: allowedPaymentMethodValues.includes(String(entry?.metodoPago || ''))
+    ? entry?.detalleMetodoPago || ''
+    : '',
+  monedaLabel: allowedPaymentMethodValues.includes(String(entry?.metodoPago || ''))
+    ? entry?.monedaLabel || ''
+    : '',
+  referencia: allowedPaymentMethodValues.includes(String(entry?.metodoPago || ''))
+    ? entry?.referencia || ''
+    : '',
   comprobante: null,
+  comprobanteNombre: '',
 });
+
+const createCheckoutForm = (displayName = '') => ({
+  deliveryMode: '',
+  destinatario: displayName && displayName !== 'Usuario' ? displayName : '',
+  direccionExacta: '',
+  telefonoDestinatario: '',
+  correoDestinatario: '',
+  empresaEnvio: '',
+  direccionEnvio: '',
+  pagos: [createPaymentEntry()],
+});
+
+const getAuthenticatedCedula = (user) => {
+  const cedula =
+    user?.cedula ??
+    user?.ci ??
+    user?.documento ??
+    user?.identificacion ??
+    user?.raw?.cedula ??
+    '';
+
+  return String(cedula || '').replace(/\D/g, '').trim();
+};
 
 const getDisplayName = (user) => {
   if (!user) {
@@ -111,26 +209,30 @@ const Card = ({ title, children, subtitle }) => (
 export default function CheckoutScreen({ navigation }) {
   const { user, token } = useAuth();
   const { items, total, clearCart } = useCart();
+  const userDisplayName = useMemo(() => getDisplayName(user), [user]);
   const [step, setStep] = useState(1);
   const [draftReady, setDraftReady] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    deliveryMode: '',
-    direccionExacta: '',
-    telefonoDestinatario: '',
-    correoDestinatario: '',
-    empresaEnvio: '',
-    direccionEnvio: '',
-    observacion: '',
-    pagos: [createPaymentEntry()],
-  });
+  const [form, setForm] = useState(() => createCheckoutForm(userDisplayName));
   const [currencyOptionsByMethod, setCurrencyOptionsByMethod] = useState({});
   const [loadingMethods, setLoadingMethods] = useState({});
 
-  const userDisplayName = useMemo(() => getDisplayName(user), [user]);
   const subtotal = total;
   const envio = 0;
   const totalFinal = subtotal + envio;
+
+  useEffect(() => {
+    setForm((current) => {
+      if (current.destinatario?.trim()) {
+        return current;
+      }
+
+      return {
+        ...current,
+        destinatario: userDisplayName === 'Usuario' ? '' : userDisplayName,
+      };
+    });
+  }, [userDisplayName]);
 
   const { data: empresasResponse, loading: empresasLoading, error: empresasError } =
     useFetch(buildApiUrl(EMPRESAS_ENVIO_PATH));
@@ -219,6 +321,16 @@ export default function CheckoutScreen({ navigation }) {
       console.log('No se pudo borrar el borrador del checkout:', error?.message);
     }
   };
+
+  useEffect(() => {
+    if (!draftReady || items.length > 0) {
+      return;
+    }
+
+    setStep(1);
+    setForm(createCheckoutForm(userDisplayName));
+    clearDraft();
+  }, [draftReady, items.length, userDisplayName]);
 
   const updateForm = (field, value) => {
     setForm((current) => ({
@@ -333,7 +445,12 @@ export default function CheckoutScreen({ navigation }) {
         return;
       }
 
-      const file = result.assets[0];
+      const file = normalizeReceiptFile(result.assets[0], `comprobante_${paymentId}`);
+      if (!file) {
+        Alert.alert('Error', 'El archivo seleccionado no se pudo preparar como comprobante.');
+        return;
+      }
+
       updatePaymentEntry(paymentId, {
         comprobante: file,
         comprobanteNombre: file.name || 'comprobante',
@@ -397,7 +514,8 @@ export default function CheckoutScreen({ navigation }) {
 
       if (form.deliveryMode === 'delivery') {
         return Boolean(
-          form.direccionExacta.trim() &&
+          form.destinatario.trim() &&
+            form.direccionExacta.trim() &&
             form.telefonoDestinatario.trim() &&
             form.correoDestinatario.trim()
         );
@@ -449,11 +567,10 @@ export default function CheckoutScreen({ navigation }) {
       form.deliveryMode === 'delivery'
         ? {
             modoEntrega: 'delivery',
-            destinatario: userDisplayName,
+            destinatario: form.destinatario.trim(),
             telefono_destinatario: form.telefonoDestinatario.trim(),
             correo_destinatario: form.correoDestinatario.trim(),
             direccion_exacta: form.direccionExacta.trim(),
-            observacion: form.observacion.trim(),
           }
         : {
             modoEntrega: 'envio nacional',
@@ -462,7 +579,7 @@ export default function CheckoutScreen({ navigation }) {
           };
 
     return {
-      cedula: user?.cedula || '',
+      cedula: getAuthenticatedCedula(user),
       detallePedido,
       detallePago,
       detalleEnvio,
@@ -472,6 +589,14 @@ export default function CheckoutScreen({ navigation }) {
   const handleConfirmPurchase = async () => {
     if (!token) {
       Alert.alert('Sesion requerida', 'Inicia sesion nuevamente para confirmar la compra.');
+      return;
+    }
+
+    if (!getAuthenticatedCedula(user)) {
+      Alert.alert(
+        'Sesion incompleta',
+        'No se pudo identificar la cedula del usuario. Cierra sesion e inicia nuevamente.'
+      );
       return;
     }
 
@@ -494,17 +619,9 @@ export default function CheckoutScreen({ navigation }) {
       formData.append('detallePago', JSON.stringify(payload.detallePago));
       formData.append('detalleEnvio', JSON.stringify(payload.detalleEnvio));
 
-      paymentEntries.forEach((entry, index) => {
-        if (!entry.comprobante?.uri) {
-          return;
-        }
-
-        formData.append(`comprobante_${index}`, {
-          uri: entry.comprobante.uri,
-          name: entry.comprobante.name || entry.comprobanteNombre || `comprobante_${index}`,
-          type: entry.comprobante.mimeType || 'application/octet-stream',
-        });
-      });
+      for (const [index, entry] of paymentEntries.entries()) {
+        await appendReceiptToFormData(formData, `comprobante_${index}`, entry.comprobante);
+      }
 
       const response = await fetch(buildApiUrl(PEDIDOS_REGISTRAR_PATH), {
         method: 'POST',
@@ -726,6 +843,13 @@ export default function CheckoutScreen({ navigation }) {
 
           {form.deliveryMode === 'delivery' && (
             <View style={styles.formBox}>
+              <Text style={styles.label}>Destinatario</Text>
+              <TextInput
+                style={styles.input}
+                value={form.destinatario}
+                onChangeText={(value) => updateForm('destinatario', value)}
+                placeholder="Nombre de quien recibe"
+              />
               <Text style={styles.label}>Telefono destinatario</Text>
               <TextInput
                 style={styles.input}
@@ -749,13 +873,6 @@ export default function CheckoutScreen({ navigation }) {
                 value={form.direccionExacta}
                 onChangeText={(value) => updateForm('direccionExacta', value)}
                 placeholder="Escribe la direccion de entrega"
-              />
-              <Text style={styles.label}>Observacion</Text>
-              <TextInput
-                style={styles.input}
-                value={form.observacion}
-                onChangeText={(value) => updateForm('observacion', value)}
-                placeholder="Punto de referencia"
               />
             </View>
           )}
@@ -924,7 +1041,7 @@ export default function CheckoutScreen({ navigation }) {
                     ]}>
                     {requiresSupport
                       ? entry.comprobanteNombre || 'Seleccionar archivo'
-                      : 'No aplica para efectivo'}
+                      : 'Selecciona transferencia o pago movil'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -983,6 +1100,11 @@ export default function CheckoutScreen({ navigation }) {
                 ? form.direccionExacta || 'Sin direccion'
                 : form.direccionEnvio || 'Sin direccion'}
             </Text>
+            {form.deliveryMode === 'delivery' ? (
+              <Text style={styles.userBoxText}>
+                Destinatario: {form.destinatario || 'No definido'}
+              </Text>
+            ) : null}
             {form.deliveryMode === 'delivery' ? (
               <Text style={styles.userBoxText}>
                 Telefono: {form.telefonoDestinatario || 'No definido'}

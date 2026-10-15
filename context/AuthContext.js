@@ -45,6 +45,14 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  const updateUser = async (nextUser) => {
+    await AsyncStorage.setItem('user_data', JSON.stringify(nextUser));
+    setSession((currentSession) => ({
+      ...currentSession,
+      user: nextUser,
+    }));
+  };
+
   const signOut = () => {
     AsyncStorage.removeItem('jwt_token').catch(() => {});
     AsyncStorage.removeItem('user_data').catch(() => {});
@@ -65,6 +73,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: Boolean(session.user || session.token),
     signIn,
     signOut,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

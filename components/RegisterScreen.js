@@ -44,7 +44,11 @@ const RegisterScreen = ({ navigation }) => {
   };
 
   const isValidPassword = (password) => {
-    return password.length >= 6;
+    return password.length >= 8
+      && !/\s/.test(password)
+      && /[A-Za-z]/.test(password)
+      && /\d/.test(password)
+      && /[^A-Za-z0-9]/.test(password);
   };
 
   const isValidPhone = (phone) => {
@@ -76,8 +80,15 @@ const RegisterScreen = ({ navigation }) => {
       return;
     }
 
+    /* Legacy message.
     if (!isValidPassword(formData.password)) {
       Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    */
+    if (!isValidPassword(formData.password)) {
+      Alert.alert('Error', 'La contrasena debe tener al menos 8 caracteres, letras, numeros y un simbolo');
       return;
     }
 

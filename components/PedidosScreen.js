@@ -125,7 +125,7 @@ export default function PedidosScreen({ navigation }) {
       return (
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color="#14532d" />
-          <Text style={styles.centerText}>Cargando tus pedidos...</Text>
+          <Text style={styles.centerText}>Cargando ventas por evento...</Text>
         </View>
       );
     }
@@ -134,7 +134,7 @@ export default function PedidosScreen({ navigation }) {
       return (
         <View style={styles.centerState}>
           <Ionicons name="cloud-offline-outline" size={44} color="#b91c1c" />
-          <Text style={styles.centerTitle}>No pudimos cargar tus pedidos</Text>
+          <Text style={styles.centerTitle}>No pudimos cargar tus ventas por evento</Text>
           <Text style={styles.centerText}>{error}</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => loadVentas()}>
             <Text style={styles.primaryButtonText}>Reintentar</Text>
@@ -166,7 +166,7 @@ export default function PedidosScreen({ navigation }) {
           <Ionicons name="receipt-outline" size={28} color="#14532d" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Mis pedidos</Text>
+          <Text style={styles.title}>Ventas por evento</Text>
           <Text style={styles.subtitle}>
             Ventas por evento registradas por {displayName}.
           </Text>

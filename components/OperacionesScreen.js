@@ -8,15 +8,30 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
+import { isClientUser } from '../utils/userRole';
 
 export default function CustomVentasButton(props) {
   const [open, setOpen] = useState(false);
   const nav = useNavigation();
+  const { user } = useAuth();
+  const isClient = isClientUser(user);
 
   const anim1 = useRef(new Animated.Value(0)).current;
   const anim2 = useRef(new Animated.Value(0)).current;
 
   const toggleMenu = () => {
+    if (isClient) {
+      const parentNavigation = nav.getParent();
+      if (parentNavigation) {
+        parentNavigation.navigate('Compras');
+        return;
+      }
+
+      nav.navigate('Compras');
+      return;
+    }
+
     setOpen(!open);
     Animated.parallel([
       Animated.spring(anim1, { toValue: open ? 0 : 1, useNativeDriver: true }),
@@ -34,7 +49,11 @@ export default function CustomVentasButton(props) {
           {...props}
           onPress={toggleMenu}
           style={{ alignItems: 'center' }}>
-          <Ionicons name="bag" size={26} color={open ? '#14532d' : '#888'} />
+          <Ionicons
+            name={isClient ? 'receipt' : 'bag'}
+            size={26}
+            color={open ? '#14532d' : '#888'}
+          />
           <Text
             style={{
               fontSize: 10,
@@ -42,12 +61,12 @@ export default function CustomVentasButton(props) {
               color: open ? '#14532d' : '#888',
               marginTop: 2,
             }}>
-            Ventas
+            {isClient ? 'Pedidos' : 'Ventas'}
           </Text>
         </TouchableOpacity>
 
         {/* Burbuja Evento */}
-        {open && (
+        {!isClient && open && (
           <Animated.View
             style={[
               styles.bubble,
@@ -76,7 +95,7 @@ export default function CustomVentasButton(props) {
         )}
 
         {/* Burbuja Presencial */}
-        {open && (
+        {!isClient && open && (
           <Animated.View
             style={[
               styles.bubble,

@@ -12,6 +12,8 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { StackActions } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getDisplayName } from './../utils/userDisplay';
+import { isClientUser, isEntrepreneurUser } from './../utils/userRole';
+import { getImageUrl } from './../utils/imageUrl';
 
 const getMemberSince = (user) => {
   const rawDate =
@@ -39,6 +41,9 @@ const PerfilScreen = ({ route, navigation }) => {
   const currentUser = route?.params?.user || user || {};
   const displayName = getDisplayName(currentUser);
   const memberSince = getMemberSince(currentUser);
+  const isClient = isClientUser(currentUser);
+  const isEntrepreneur = isEntrepreneurUser(currentUser);
+  const profileImageUrl = getImageUrl(currentUser.imgperfil || currentUser.imagen);
 
   const handleLogout = () => {
     Alert.alert('Cerrar sesion', 'Deseas cerrar sesion?', [
@@ -66,7 +71,7 @@ const PerfilScreen = ({ route, navigation }) => {
         <View style={styles.profilePicContainer}>
           <Image
             source={{
-              uri: 'https://static.vecteezy.com/system/resources/previews/047/733/682/non_2x/grey-avatar-icon-user-avatar-photo-icon-social-media-user-icon-vector.jpg',
+              uri: profileImageUrl,
             }}
             style={styles.profilePic}
           />
@@ -93,23 +98,38 @@ const PerfilScreen = ({ route, navigation }) => {
       </View>
 
       <View style={styles.menuCard}>
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => navigation.navigate('MiPerfil')}>
           <Ionicons name="person" size={22} color="#006400" />
           <Text style={styles.menuText}>Mi perfil</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Pedidos')}>
-          <Ionicons name="list" size={22} color="#006400" />
-          <Text style={styles.menuText}>Mis pedidos</Text>
-        </TouchableOpacity>
+        {isEntrepreneur ? (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Compras', { mode: 'solicitados' })}>
+            <Ionicons name="clipboard" size={22} color="#006400" />
+            <Text style={styles.menuText}>Pedidos</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {!isClient ? (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Pedidos')}>
+            <Ionicons name="list" size={22} color="#006400" />
+            <Text style={styles.menuText}>Ventas por evento</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => navigation.navigate('Compras')}>
+          onPress={() => navigation.navigate('Compras', { mode: isEntrepreneur ? 'compras' : 'default' })}>
           <Ionicons name="bag-check" size={22} color="#006400" />
-          <Text style={styles.menuText}>Mis compras</Text>
+          <Text style={styles.menuText}>
+            {isClient ? 'Mis Pedidos' : isEntrepreneur ? 'Mis compras' : 'Pedidos'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity

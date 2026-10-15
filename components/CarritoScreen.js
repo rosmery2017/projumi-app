@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { useCart } from './../context/CartContext';
+import { getImageUrl } from './../utils/imageUrl';
 
 const formatPrice = (value) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -43,7 +44,7 @@ export default function CarritoScreen({ navigation }) {
             return (
             <View style={styles.item}>
               {item.imagen ? (
-                <Image source={{ uri: item.imagen }} style={styles.image} />
+                <Image source={{ uri: getImageUrl(item.imagen, '') }} style={styles.image} />
               ) : (
                 <View style={[styles.image, styles.imagePlaceholder]} />
               )}

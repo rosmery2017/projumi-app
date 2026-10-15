@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,10 @@ import { useAuth } from './../context/AuthContext';
 import { buildApiUrl } from './../config/api';
 import useFetch from './../hooks/useFetch';
 import { getDisplayName } from './../utils/userDisplay';
+import { isEntrepreneurUser } from './../utils/userRole';
 
 const PEDIDOS_PATH = '/pedidos/mostrarPedidos';
+const MIS_COMPRAS_PATH = '/pedidos/mostrarMisCompras';
 const PEDIDO_DETALLE_PATH = '/pedidos/consultarPedido';
 
 const formatPrice = (value) => `$${Number(value || 0).toFixed(2)}`;
@@ -45,9 +47,25 @@ const statusColor = (status) => {
   return '#475569';
 };
 
-export default function ComprasScreen({ navigation }) {
+export default function ComprasScreen({ navigation, route }) {
   const { user, token, isReady } = useAuth();
   const displayName = getDisplayName(user);
+  const isEntrepreneur = isEntrepreneurUser(user);
+  const screenMode = route?.params?.mode || (isEntrepreneur ? 'solicitados' : 'default');
+  const isPurchasesMode = screenMode === 'compras';
+  const isRequestedOrdersMode = screenMode === 'solicitados' && isEntrepreneur;
+  const screenTitle = isRequestedOrdersMode
+    ? 'Pedidos solicitados'
+    : isPurchasesMode
+      ? 'Mis compras'
+      : 'Mis pedidos';
+  const headerSubtitle = isRequestedOrdersMode
+    ? `Pedidos realizados por clientes a tu emprendimiento, ${displayName}.`
+    : `Historial del usuario ${displayName}.`;
+
+  useEffect(() => {
+    navigation.setOptions?.({ title: screenTitle });
+  }, [navigation, screenTitle]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState(null);
   const [pedidoDetalle, setPedidoDetalle] = useState(null);
@@ -65,7 +83,7 @@ export default function ComprasScreen({ navigation }) {
     return headers;
   }, [token]);
 
-  const pedidosUrl = buildApiUrl(PEDIDOS_PATH);
+  const pedidosUrl = buildApiUrl(isPurchasesMode ? MIS_COMPRAS_PATH : PEDIDOS_PATH);
   const { data, loading, error, refetch } = useFetch(
     pedidosUrl,
     { method: 'GET', headers: authHeaders },
@@ -142,7 +160,7 @@ export default function ComprasScreen({ navigation }) {
       return (
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color="#14532d" />
-          <Text style={styles.centerText}>Cargando tus pedidos...</Text>
+          <Text style={styles.centerText}>Cargando {isPurchasesMode ? 'tus compras' : 'tus pedidos'}...</Text>
         </View>
       );
     }
@@ -151,7 +169,9 @@ export default function ComprasScreen({ navigation }) {
       return (
         <View style={styles.centerState}>
           <Ionicons name="cloud-offline-outline" size={42} color="#b91c1c" />
-          <Text style={styles.centerTitle}>No pudimos cargar tus pedidos</Text>
+          <Text style={styles.centerTitle}>
+            No pudimos cargar {isPurchasesMode ? 'tus compras' : 'tus pedidos'}
+          </Text>
           <Text style={styles.centerText}>{error.message || 'Intenta de nuevo.'}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={refetch}>
             <Text style={styles.retryButtonText}>Reintentar</Text>
@@ -163,9 +183,13 @@ export default function ComprasScreen({ navigation }) {
     return (
       <View style={styles.centerState}>
         <Ionicons name="receipt-outline" size={46} color="#94a3b8" />
-        <Text style={styles.centerTitle}>Aun no tienes pedidos</Text>
+        <Text style={styles.centerTitle}>
+          {isPurchasesMode ? 'Aun no tienes compras' : 'Aun no tienes pedidos'}
+        </Text>
         <Text style={styles.centerText}>
-          Aqui veras el historial de compras del usuario {displayName}.
+          {isRequestedOrdersMode
+            ? 'Aqui veras los pedidos solicitados por tus clientes.'
+            : `Aqui veras el historial del usuario ${displayName}.`}
         </Text>
         <TouchableOpacity
           style={styles.retryButton}
@@ -183,10 +207,8 @@ export default function ComprasScreen({ navigation }) {
           <Ionicons name="bag-check-outline" size={34} color="#14532d" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Mis compras</Text>
-          <Text style={styles.subtitle}>
-            Historial del usuario {displayName}.
-          </Text>
+          <Text style={styles.title}>{screenTitle}</Text>
+          <Text style={styles.subtitle}>{headerSubtitle}</Text>
         </View>
         <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
           <Ionicons name="refresh" size={18} color="#14532d" />
@@ -219,7 +241,12 @@ export default function ComprasScreen({ navigation }) {
             </View>
 
             <Text style={styles.meta}>
-              Emprendedor: <Text style={styles.metaStrong}>{item.emprendedor_nombre}</Text>
+              {isRequestedOrdersMode ? 'Cliente' : 'Emprendedor'}:{' '}
+              <Text style={styles.metaStrong}>
+                {isRequestedOrdersMode
+                  ? item.cliente_nombre || 'Cliente no disponible'
+                  : item.emprendedor_nombre || 'Emprendedor no disponible'}
+              </Text>
             </Text>
             <Text style={styles.meta}>
               Total: <Text style={styles.totalText}>{formatPrice(item.total_pedido)}</Text>
